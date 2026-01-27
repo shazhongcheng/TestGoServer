@@ -1,6 +1,7 @@
 package gate
 
 import (
+	"game-server/internal/protocol"
 	"time"
 
 	"game-server/internal/protocol/internalpb"
@@ -40,7 +41,7 @@ func (g *Gate) sendResumeRsp(c *Conn, ok bool, reason string) {
 	payload, _ := proto.Marshal(rsp)
 
 	env := &internalpb.Envelope{
-		MsgId:     MsgResumeRsp,
+		MsgId:     protocol.MsgResumeRsp,
 		SessionId: c.sessionID,
 		Payload:   payload,
 	}
