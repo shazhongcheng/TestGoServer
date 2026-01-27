@@ -3,6 +3,7 @@ package gate
 
 import (
 	"encoding/binary"
+	"errors"
 	"game-server/internal/protocol"
 	"game-server/internal/protocol/internalpb"
 	"google.golang.org/protobuf/proto"
@@ -16,12 +17,52 @@ type Conn struct {
 	sessionID int64
 	gate      *Gate
 	netConn   net.Conn
+
+	sendCh chan *internalpb.Envelope
+	closed chan struct{}
 }
 
 func NewConn(nc net.Conn, g *Gate) *Conn {
-	return &Conn{
+	c := &Conn{
 		netConn: nc,
 		gate:    g,
+
+		sendCh: make(chan *internalpb.Envelope, 1024), // 关键：有容量
+		closed: make(chan struct{}),
+	}
+
+	go c.writeLoop()
+	return c
+}
+
+func (c *Conn) writeLoop() {
+	defer c.close()
+
+	for {
+		select {
+		case env := <-c.sendCh:
+			if err := WriteEnvelope(c.netConn, env); err != nil {
+				return
+			}
+		case <-c.closed:
+			return
+		}
+	}
+}
+
+func WriteEnvelope(conn net.Conn, env *internalpb.Envelope) interface{} {
+	Conn.writeEnvelope(env)
+}
+
+var ErrConnBusy = errors.New("connection send buffer full")
+
+func (c *Conn) Send(env *internalpb.Envelope) error {
+	select {
+	case c.sendCh <- env:
+		return nil
+	default:
+		// 队列满了 = 下游处理不过来
+		return ErrConnBusy
 	}
 }
 
