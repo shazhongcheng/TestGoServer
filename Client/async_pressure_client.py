@@ -209,13 +209,19 @@ async def main():
     host = "127.0.0.1"
     port = 9000
 
-    client_count = 3000
+    client_count = 5000
     rounds = 1
 
-    tasks = [
-        run_pressure_client(host, port, i, rounds=rounds)
-        for i in range(client_count)
-    ]
+    tasks = []
+
+    for i in range(client_count):
+        task = asyncio.create_task(
+            run_pressure_client(host, port, i, rounds=rounds)
+        )
+        tasks.append(task)
+
+        # ⭐ 核心：限制建连速率（1~5ms 都行）
+        await asyncio.sleep(0.002)  # 2ms 一个连接
 
     results = await asyncio.gather(*tasks)
 

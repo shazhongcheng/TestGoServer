@@ -21,7 +21,7 @@ type Gate struct {
 
 	sessions *SessionManager
 
-	serviceClient *remoteClient
+	servicePool *remoteClientPool
 
 	heartbeatInterval time.Duration
 	heartbeatTimeout  time.Duration
@@ -121,9 +121,9 @@ func (g *Gate) Kick(sessionID int64, reason string) error {
 	return nil
 }
 
-func (g *Gate) ConnectService(ctx context.Context, addr string) {
-	g.serviceClient = newRemoteClient("service", addr, g.logger, g.OnServiceEnvelope)
-	g.serviceClient.Start(ctx)
+func (g *Gate) ConnectService(ctx context.Context, addr string, poolSize int) {
+	g.servicePool = newRemoteClientPool("service", addr, g.logger, g.OnServiceEnvelope, poolSize)
+	g.servicePool.Start(ctx)
 }
 
 func (g *Gate) UpdateConfig(interval, timeout, gc time.Duration) {

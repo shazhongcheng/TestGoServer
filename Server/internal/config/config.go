@@ -19,6 +19,7 @@ type GateConfig struct {
 	ListenAddr           string `json:"listen_addr"`
 	ServiceAddr          string `json:"service_addr"`
 	GameAddr             string `json:"game_addr"`
+	ServicePoolSize      int    `json:"service_pool_size"`
 	HeartbeatIntervalSec int    `json:"heartbeat_interval_sec"`
 	HeartbeatTimeoutSec  int    `json:"heartbeat_timeout_sec"`
 	GCIntervalSec        int    `json:"gc_interval_sec"`

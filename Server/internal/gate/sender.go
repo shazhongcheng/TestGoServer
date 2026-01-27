@@ -7,14 +7,14 @@ import (
 )
 
 func (g *Gate) sendToService(module string, env *internalpb.Envelope) {
-	if g.serviceClient == nil {
+	if g.servicePool == nil {
 		g.logger.Warn("service not initialized")
 		return
 	}
 	if s := g.sessions.Get(env.GetSessionId()); s != nil {
 		env.PlayerId = s.PlayerID
 	}
-	if err := g.serviceClient.Send(env); err != nil {
+	if err := g.servicePool.Send(env.GetSessionId(), env); err != nil {
 		g.logger.Warn("send to service failed: %v", zap.Err("err", err))
 	}
 }

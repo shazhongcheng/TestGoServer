@@ -25,6 +25,10 @@ type remoteClient struct {
 	sendCh chan *internalpb.Envelope
 }
 
+type remoteClientPool struct {
+	clients []*remoteClient
+}
+
 func newRemoteClient(name, addr string, logger *zap.Logger, onEnvelope func(env *internalpb.Envelope)) *remoteClient {
 	return &remoteClient{
 		name:       name,
@@ -35,6 +39,34 @@ func newRemoteClient(name, addr string, logger *zap.Logger, onEnvelope func(env 
 		// 队列大小可以根据压测调整
 		sendCh: make(chan *internalpb.Envelope, 8192),
 	}
+}
+
+func newRemoteClientPool(name, addr string, logger *zap.Logger, onEnvelope func(env *internalpb.Envelope), size int) *remoteClientPool {
+	if size < 1 {
+		size = 1
+	}
+	clients := make([]*remoteClient, 0, size)
+	for i := 0; i < size; i++ {
+		clients = append(clients, newRemoteClient(name, addr, logger, onEnvelope))
+	}
+	return &remoteClientPool{clients: clients}
+}
+
+func (p *remoteClientPool) Start(ctx context.Context) {
+	for _, client := range p.clients {
+		client.Start(ctx)
+	}
+}
+
+func (p *remoteClientPool) Send(sessionID int64, env *internalpb.Envelope) error {
+	if len(p.clients) == 0 {
+		return protocol.InternalErrRemoteBusy
+	}
+	index := int(sessionID % int64(len(p.clients)))
+	if index < 0 {
+		index = -index
+	}
+	return p.clients[index].Send(env)
 }
 
 func (c *remoteClient) Start(ctx context.Context) {

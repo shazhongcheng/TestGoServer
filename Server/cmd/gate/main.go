@@ -58,7 +58,7 @@ func main() {
 		time.Duration(cfg.GCIntervalSec)*time.Second,
 	)
 	g.Start(ctx)
-	g.ConnectService(ctx, cfg.ServiceAddr)
+	g.ConnectService(ctx, cfg.ServiceAddr, cfg.ServicePoolSize)
 
 	// ========== TCP Listener ==========
 	addr := cfg.ListenAddr
