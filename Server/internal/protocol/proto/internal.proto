@@ -1,0 +1,12 @@
+// protocol/internal.proto
+syntax = "proto3";
+
+package internalpb;
+option go_package = "game-server/protocol/internalpb";
+
+message Envelope {
+  int32  msg_id     = 1;   // 业务消息 ID
+  int64  session_id = 2;   // Gate 会话
+  int64  player_id  = 3;   // 登录后才有
+  bytes  payload    = 4;   // 业务数据
+}

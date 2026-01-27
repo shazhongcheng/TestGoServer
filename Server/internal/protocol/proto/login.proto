@@ -1,0 +1,13 @@
+// protocol/login.proto
+syntax = "proto3";
+
+package internalpb;
+option go_package = "game-server/protocol/internalpb";
+
+message LoginReq {
+  string token = 1;
+}
+
+message LoginRsp {
+  int64 player_id = 1;
+}
