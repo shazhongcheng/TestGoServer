@@ -1,0 +1,14 @@
+syntax = "proto3";
+
+package internalpb;
+option go_package = "game-server/protocol/internalpb";
+
+message ResumeReq {
+  int64 session_id = 1;
+  string token     = 2;
+}
+
+message ResumeRsp {
+  bool ok          = 1;
+  string reason    = 2;
+}

@@ -14,4 +14,6 @@ type Context struct {
 	// 回包 / 推送
 	Reply func(msgID int, data []byte) error
 	Push  func(msgID int, data []byte) error
+	// 更新 Gate 会话信息
+	SetPlayerID func(playerID int64)
 }

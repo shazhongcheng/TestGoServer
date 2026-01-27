@@ -8,8 +8,9 @@ type SessionState int
 const (
 	SessionInit SessionState = iota
 	SessionOnline
-	SessionOffline // 断线，等待重连
-	SessionClosed  // 彻底销毁
+	SessionAuthenticated // ✅ 已登录
+	SessionOffline       // 断线，等待重连
+	SessionClosed        // 彻底销毁
 )
 
 type Session struct {
@@ -31,4 +32,8 @@ func (g *Gate) newSession() *Session {
 	}
 	s.Token = g.signResumeToken(s)
 	return s
+}
+
+func (s *Session) MarkSeen() {
+	s.LastSeen = time.Now()
 }
