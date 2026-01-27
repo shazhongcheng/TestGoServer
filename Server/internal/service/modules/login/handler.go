@@ -1,6 +1,7 @@
 package login
 
 import (
+	"game-server/internal/handler"
 	"game-server/internal/protocol"
 	"game-server/internal/protocol/internalpb"
 	"game-server/internal/service"
@@ -8,10 +9,8 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-func (m *Module) Handlers() map[int]service.HandlerFunc {
-	return map[int]service.HandlerFunc{
-		protocol.MsgLoginReq: m.onLogin,
-	}
+func (m *Module) RegisterHandlers(reg *handler.Registry[service.HandlerFunc]) error {
+	return reg.Register(protocol.MsgLoginReq, m.onLogin)
 }
 
 func (m *Module) verifyToken(platform int32, token string) error {

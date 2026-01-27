@@ -63,7 +63,7 @@ func (s *Server) handleConn(conn net.Conn) {
 		if err != nil {
 			return
 		}
-		go s.handleEnvelope(buffered, env)
+		s.handleEnvelope(buffered, env)
 	}
 }
 

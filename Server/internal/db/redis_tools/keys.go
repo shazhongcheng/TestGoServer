@@ -7,20 +7,24 @@ import (
 
 const (
 	KeyUIDNext = "uid:next"
+
+	keyAccountPrefix = "account:"
+	keyPlayerPrefix  = "player:"
+	keyRankPrefix    = "rank:"
 )
 
 func KeyPlayerBase(playerID int64) string {
-	return fmt.Sprintf("player:%d:base", playerID)
+	return fmt.Sprintf("%s%d:base", keyPlayerPrefix, playerID)
 }
 
 func KeyRank(rankName string) string {
-	return fmt.Sprintf("rank:%s", rankName)
+	return fmt.Sprintf("%s%s", keyRankPrefix, rankName)
 }
 
 func AccountRoleKey(accountID string) string {
-	return "account:" + accountID + ":role"
+	return fmt.Sprintf("%s%s:role", keyAccountPrefix, accountID)
 }
 
 func PlayerProfileKey(roleID int64) string {
-	return "player:" + strconv.FormatInt(roleID, 10) + ":profile"
+	return fmt.Sprintf("%s%s:profile", keyPlayerPrefix, strconv.FormatInt(roleID, 10))
 }

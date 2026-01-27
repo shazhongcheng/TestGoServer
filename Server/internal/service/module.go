@@ -1,8 +1,10 @@
 // internal/service/module.go
 package service
 
+import "game-server/internal/handler"
+
 type Module interface {
 	Name() string
 	Init() error
-	Handlers() map[int]HandlerFunc
+	RegisterHandlers(reg *handler.Registry[HandlerFunc]) error
 }

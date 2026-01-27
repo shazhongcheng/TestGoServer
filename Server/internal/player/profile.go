@@ -2,11 +2,6 @@ package player
 
 import "fmt"
 
-const (
-	accountKeyPrefix = "account:"
-	playerKeyPrefix  = "player:"
-)
-
 type PlayerProfile struct {
 	RoleID    int64  `json:"role_id"`
 	AccountID string `json:"account_id,omitempty"`
@@ -15,17 +10,6 @@ type PlayerProfile struct {
 	Exp       int64  `json:"exp"`
 	Gold      int64  `json:"gold"`
 	Stamina   int64  `json:"stamina"`
-}
-
-// ======================
-// Redis Keys
-// ======================
-func AccountRoleKey(accountID string) string {
-	return fmt.Sprintf("%s%s:role", accountKeyPrefix, accountID)
-}
-
-func PlayerProfileKey(roleID int64) string {
-	return fmt.Sprintf("%s%d:profile", playerKeyPrefix, roleID)
 }
 
 // ======================

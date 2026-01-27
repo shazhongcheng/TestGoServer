@@ -13,8 +13,15 @@ type RedisDao struct {
 }
 
 func NewRedisDao() *RedisDao {
+	return NewRedisDaoWithClient(RDB())
+}
+
+func NewRedisDaoWithClient(client *redis.Client) *RedisDao {
+	if client == nil {
+		client = RDB()
+	}
 	return &RedisDao{
-		client: RDB(),
+		client: client,
 	}
 }
 

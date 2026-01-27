@@ -36,7 +36,7 @@ func (s *RedisStore) LoadRoleID(
 		return 0, false, nil
 	}
 
-	key := AccountRoleKey(accountID)
+	key := redis_tools.AccountRoleKey(accountID)
 	val, err := s.dao.GetString(ctx, key)
 	if err != nil {
 		if err == redis.Nil {
@@ -63,7 +63,7 @@ func (s *RedisStore) SaveRoleID(
 		return nil
 	}
 
-	key := AccountRoleKey(accountID)
+	key := redis_tools.AccountRoleKey(accountID)
 	return s.dao.SetWithTTL(ctx, key, roleID, 0)
 }
 
@@ -79,7 +79,7 @@ func (s *RedisStore) LoadProfile(
 		return nil, false, nil
 	}
 
-	key := PlayerProfileKey(roleID)
+	key := redis_tools.PlayerProfileKey(roleID)
 	val, err := s.dao.GetString(ctx, key)
 	if err != nil {
 		if err == redis.Nil {
@@ -110,6 +110,6 @@ func (s *RedisStore) SaveProfile(
 		return fmt.Errorf("encode profile: %w", err)
 	}
 
-	key := PlayerProfileKey(profile.RoleID)
+	key := redis_tools.PlayerProfileKey(profile.RoleID)
 	return s.dao.SetWithTTL(ctx, key, data, 0)
 }

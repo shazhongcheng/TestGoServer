@@ -3,19 +3,20 @@ package service
 
 import (
 	"fmt"
+	"game-server/internal/handler"
 	"sync"
 )
 
 type Registry struct {
 	modules  map[string]Module
-	handlers map[int]HandlerFunc
+	handlers *handler.Registry[HandlerFunc]
 	mu       sync.RWMutex
 }
 
 func NewRegistry() *Registry {
 	return &Registry{
 		modules:  make(map[string]Module),
-		handlers: make(map[int]HandlerFunc),
+		handlers: handler.NewRegistry[HandlerFunc](),
 	}
 }
 
@@ -32,11 +33,8 @@ func (r *Registry) Register(m Module) error {
 		return fmt.Errorf("init module %s failed: %w", name, err)
 	}
 
-	for msgID, handler := range m.Handlers() {
-		if _, exists := r.handlers[msgID]; exists {
-			return fmt.Errorf("msgID %d already registered", msgID)
-		}
-		r.handlers[msgID] = handler
+	if err := m.RegisterHandlers(r.handlers); err != nil {
+		return fmt.Errorf("register handlers for module %s failed: %w", name, err)
 	}
 
 	r.modules[name] = m
@@ -47,6 +45,6 @@ func (r *Registry) GetHandler(msgID int) (HandlerFunc, bool) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	h, ok := r.handlers[msgID]
+	h, ok := r.handlers.Get(msgID)
 	return h, ok
 }

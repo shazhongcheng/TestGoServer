@@ -7,6 +7,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"game-server/internal/handler"
 	"game-server/internal/protocol"
 	"game-server/internal/protocol/internalpb"
 	"go.uber.org/zap"
@@ -33,6 +34,8 @@ type Gate struct {
 
 	id        string // 比如 "gate1"
 	nextTrace uint64
+
+	handlers *handler.Registry[HandlerFunc]
 }
 
 func (g *Gate) newTraceID() string {
@@ -49,14 +52,19 @@ func NewGate(logger *zap.Logger) *Gate {
 	if logger == nil {
 		logger = zap.NewNop()
 	}
-	return &Gate{
+	g := &Gate{
 		logger:            logger,
 		sessions:          NewSessionManager(),
 		heartbeatInterval: 100 * time.Second,
 		heartbeatTimeout:  300 * time.Second,
 		gcInterval:        10 * time.Minute,
 		loginTimeout:      100 * time.Second,
+		handlers:          handler.NewRegistry[HandlerFunc](),
 	}
+	if err := g.registerHandlers(); err != nil {
+		g.logger.Warn("register gate handlers failed", zap.String("reason", err.Error()))
+	}
+	return g
 }
 
 func (g *Gate) Start(ctx context.Context) {

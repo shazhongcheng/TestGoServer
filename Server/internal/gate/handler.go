@@ -10,6 +10,8 @@ import (
 	"go.uber.org/zap"
 )
 
+type HandlerFunc func(s *Session, c *Conn, env *internalpb.Envelope)
+
 func (g *Gate) OnEnvelope(c *Conn, env *internalpb.Envelope) {
 	msgID := int(env.MsgId)
 
@@ -17,7 +19,7 @@ func (g *Gate) OnEnvelope(c *Conn, env *internalpb.Envelope) {
 	// 1️⃣ Resume 协商：优先处理
 	// =========================
 	if msgID == protocol.MsgResumeReq {
-		g.handleResume(c, env)
+		g.dispatchHandler(nil, c, env)
 		return
 	}
 
@@ -120,9 +122,8 @@ func (g *Gate) OnEnvelope(c *Conn, env *internalpb.Envelope) {
 	// =========================
 	// 4️⃣ Gate 控制消息
 	// =========================
-	switch msgID {
-	case protocol.MsgHeartbeatReq:
-		g.onHeartbeat(s.ID)
+	if msgID == protocol.MsgHeartbeatReq {
+		g.dispatchHandler(s, c, env)
 		return
 	}
 
@@ -159,6 +160,40 @@ func (g *Gate) OnEnvelope(c *Conn, env *internalpb.Envelope) {
 			zap.String("trace_id", c.traceID),
 		)
 	}
+}
+
+func (g *Gate) registerHandlers() error {
+	if err := g.handlers.Register(protocol.MsgResumeReq, g.onResumeHandler); err != nil {
+		return err
+	}
+	return g.handlers.Register(protocol.MsgHeartbeatReq, g.onHeartbeatHandler)
+}
+
+func (g *Gate) dispatchHandler(s *Session, c *Conn, env *internalpb.Envelope) {
+	handler, ok := g.handlers.Get(int(env.MsgId))
+	if !ok {
+		g.logger.Warn("no handler for msgID",
+			zap.Int("msg_id", int(env.MsgId)),
+			zap.Int64("session", env.SessionId),
+			zap.Int64("player", env.PlayerId),
+			zap.String("reason", "handler_not_found"),
+			zap.Int64("conn_id", 0),
+			zap.String("trace_id", c.traceID),
+		)
+		return
+	}
+	handler(s, c, env)
+}
+
+func (g *Gate) onResumeHandler(_ *Session, c *Conn, env *internalpb.Envelope) {
+	g.handleResume(c, env)
+}
+
+func (g *Gate) onHeartbeatHandler(s *Session, _ *Conn, _ *internalpb.Envelope) {
+	if s == nil {
+		return
+	}
+	g.onHeartbeat(s.ID)
 }
 
 func (g *Gate) handleDuplicateLogin(s *Session) {
