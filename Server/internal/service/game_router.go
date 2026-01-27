@@ -2,11 +2,11 @@ package service
 
 import (
 	"context"
-	"game-server/internal/protocol"
 	"net"
 	"sync"
 	"time"
 
+	"game-server/internal/protocol"
 	"game-server/internal/protocol/internalpb"
 	"game-server/internal/transport"
 )
@@ -15,7 +15,10 @@ type GameRouter struct {
 	addr string
 
 	mu   sync.RWMutex
-	conn net.Conn
+	conn *transport.BufferedConn
+
+	sendCh chan *internalpb.Envelope
+	closed chan struct{}
 }
 
 func NewGameRouter(addr string) *GameRouter {
@@ -23,17 +26,43 @@ func NewGameRouter(addr string) *GameRouter {
 }
 
 func (r *GameRouter) Start(ctx context.Context, onEnvelope func(env *internalpb.Envelope)) {
+	r.sendCh = make(chan *internalpb.Envelope, 2048)
+	r.closed = make(chan struct{})
+
 	go r.connectLoop(ctx, onEnvelope)
+	go r.writeLoop()
 }
 
 func (r *GameRouter) Send(env *internalpb.Envelope) error {
-	r.mu.RLock()
-	conn := r.conn
-	r.mu.RUnlock()
-	if conn == nil {
-		return protocol.InternalErrGameRouterNotReady
+	select {
+	case r.sendCh <- env:
+		return nil
+	default:
+		return protocol.InternalErrGameRouterBusy
 	}
-	return transport.WriteEnvelope(conn, env)
+}
+
+func (r *GameRouter) writeLoop() {
+	for {
+		select {
+		case env := <-r.sendCh:
+			r.mu.RLock()
+			conn := r.conn
+			r.mu.RUnlock()
+
+			if conn == nil {
+				continue
+			}
+
+			if err := conn.WriteEnvelope(env); err != nil {
+				// 写失败，等待重连
+				time.Sleep(10 * time.Millisecond)
+			}
+
+		case <-r.closed:
+			return
+		}
+	}
 }
 
 func (r *GameRouter) connectLoop(ctx context.Context, onEnvelope func(env *internalpb.Envelope)) {
@@ -55,12 +84,12 @@ func (r *GameRouter) connectLoop(ctx context.Context, onEnvelope func(env *inter
 		}
 
 		r.mu.Lock()
-		r.conn = conn
+		r.conn = transport.NewBufferedConn(conn)
 		r.mu.Unlock()
 		backoff = time.Second
 
 		for {
-			env, err := transport.ReadEnvelope(conn)
+			env, err := r.conn.ReadEnvelope()
 			if err != nil {
 				break
 			}
@@ -69,7 +98,7 @@ func (r *GameRouter) connectLoop(ctx context.Context, onEnvelope func(env *inter
 			}
 		}
 
-		_ = conn.Close()
+		_ = r.conn.Close()
 		r.mu.Lock()
 		r.conn = nil
 		r.mu.Unlock()

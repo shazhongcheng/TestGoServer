@@ -2,14 +2,14 @@ package service
 
 import (
 	"context"
-	"game-server/internal/protocol"
-	"google.golang.org/protobuf/proto"
 	"net"
 	"sync"
 
+	"game-server/internal/protocol"
 	"game-server/internal/protocol/internalpb"
 	"game-server/internal/router"
 	"game-server/internal/transport"
+	"google.golang.org/protobuf/proto"
 )
 
 type NetServer struct {
@@ -17,7 +17,7 @@ type NetServer struct {
 	gameRouter *GameRouter
 
 	mu       sync.RWMutex
-	gateConn net.Conn
+	gateConn *transport.BufferedConn
 
 	routeMu     sync.RWMutex
 	playerRoute map[int64]*GameRouter
@@ -54,16 +54,22 @@ func (n *NetServer) ListenAndServe(ctx context.Context, addr string) error {
 			}
 		}
 		n.mu.Lock()
-		n.gateConn = conn
+		n.gateConn = transport.NewBufferedConn(conn)
 		n.mu.Unlock()
-		go n.handleGateConn(ctx, conn)
+		go n.handleGateConn(ctx)
 	}
 }
 
-func (n *NetServer) handleGateConn(ctx context.Context, conn net.Conn) {
+func (n *NetServer) handleGateConn(ctx context.Context) {
+	n.mu.RLock()
+	conn := n.gateConn
+	n.mu.RUnlock()
+	if conn == nil {
+		return
+	}
 	defer conn.Close()
 	for {
-		env, err := transport.ReadEnvelope(conn)
+		env, err := conn.ReadEnvelope()
 		if err != nil {
 			return
 		}
@@ -136,7 +142,7 @@ func (n *NetServer) replyToGate(sessionID int64, msgID int, data []byte) error {
 		SessionId: sessionID,
 		Payload:   data,
 	}
-	return transport.WriteEnvelope(conn, env)
+	return conn.WriteEnvelope(env)
 }
 
 func (n *NetServer) ForwardToGate(env *internalpb.Envelope) error {

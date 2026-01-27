@@ -3,6 +3,7 @@ package gate
 import (
 	"game-server/internal/protocol"
 	"game-server/internal/protocol/internalpb"
+	"go.uber.org/zap"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -34,18 +35,22 @@ func (g *Gate) onLoginRsp(sessionID int64, payload []byte) {
 	// ⭐ 顶号处理
 	old := g.sessions.BindPlayer(s, rsp.PlayerId)
 	if old != nil && old.ID != s.ID {
-		g.logger.Warn(
-			"kick old session=%d player=%d",
-			old.ID, rsp.PlayerId,
+		fields := append(sessionFields(old),
+			zap.Int("msg_id", protocol.MsgLoginRsp),
+			zap.String("reason", "duplicate_login"),
 		)
+		fields = append(fields, connFields(old.Conn)...)
+		g.logger.Warn("kick old session", fields...)
 		g.Kick(old.ID, "duplicate login")
 	}
 
 	s.PlayerID = rsp.PlayerId
 	s.State = SessionAuthenticated
 
-	g.logger.Info(
-		"session authenticated session=%d player=%d",
-		s.ID, s.PlayerID,
+	fields := append(sessionFields(s),
+		zap.Int("msg_id", protocol.MsgLoginRsp),
+		zap.String("reason", "session_authenticated"),
 	)
+	fields = append(fields, connFields(s.Conn)...)
+	g.logger.Info("session authenticated", fields...)
 }

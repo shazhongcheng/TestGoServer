@@ -176,6 +176,7 @@ async def run_pressure_client(
     try:
         await asyncio.wait_for(client.login_event.wait(), timeout=5.0)
     except asyncio.TimeoutError:
+        print("======222222222=========")
         await client.close()
         return []
 
@@ -187,15 +188,16 @@ async def run_pressure_client(
 
         await client.load_player_data()
         try:
-            await asyncio.wait_for(client.load_event.wait(), timeout=5.0)
+            await asyncio.wait_for(client.load_event.wait(), timeout=30.0)
         except asyncio.TimeoutError:
+            print("======111111=========")
             break
 
         latencies.append(time.perf_counter() - start)
         await asyncio.sleep(interval)
 
     # 模拟在线停留
-    await asyncio.sleep(random.uniform(10, 50))
+    await asyncio.sleep(random.uniform(10, 20))
     await client.close()
     return latencies
 
@@ -207,7 +209,7 @@ async def main():
     host = "127.0.0.1"
     port = 9000
 
-    client_count = 5000
+    client_count = 3000
     rounds = 1
 
     tasks = [

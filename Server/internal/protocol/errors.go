@@ -32,6 +32,8 @@ var (
 
 	ErrNoGateConnection           = errors.New("gate connection not ready")
 	InternalErrGameRouterNotReady = errors.New("game router not ready")
+	InternalErrGameRouterBusy     = errors.New("game router busy")
+	InternalErrRemoteBusy         = errors.New("game remote busy")
 )
 
 const (

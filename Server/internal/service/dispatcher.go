@@ -1,24 +1,42 @@
 // internal/service/dispatcher.go
 package service
 
-import "log"
+import "go.uber.org/zap"
 
 type Dispatcher struct {
 	registry *Registry
+	logger   *zap.Logger
 }
 
-func NewDispatcher(reg *Registry) *Dispatcher {
-	return &Dispatcher{registry: reg}
+func NewDispatcher(reg *Registry, logger *zap.Logger) *Dispatcher {
+	if logger == nil {
+		logger = zap.NewNop()
+	}
+	return &Dispatcher{registry: reg, logger: logger}
 }
 
 func (d *Dispatcher) Dispatch(ctx *Context) {
 	handler, ok := d.registry.GetHandler(ctx.MsgID)
 	if !ok {
-		log.Printf("[Service] no handler for msgID=%d", ctx.MsgID)
+		d.logger.Warn("no handler for msgID",
+			zap.Int("msg_id", ctx.MsgID),
+			zap.Int64("session", ctx.SessionID),
+			zap.Int64("player", ctx.PlayerID),
+			zap.String("reason", "handler_not_found"),
+			zap.Int64("conn_id", 0),
+			zap.String("trace_id", ""),
+		)
 		return
 	}
 
 	if err := handler(ctx); err != nil {
-		log.Printf("[Service] handler error msgID=%d err=%v", ctx.MsgID, err)
+		d.logger.Warn("handler error",
+			zap.Int("msg_id", ctx.MsgID),
+			zap.Int64("session", ctx.SessionID),
+			zap.Int64("player", ctx.PlayerID),
+			zap.String("reason", err.Error()),
+			zap.Int64("conn_id", 0),
+			zap.String("trace_id", ""),
+		)
 	}
 }

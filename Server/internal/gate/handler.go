@@ -2,10 +2,12 @@
 package gate
 
 import (
+	"time"
+
 	"game-server/internal/protocol"
 	"game-server/internal/protocol/internalpb"
 	"game-server/internal/router"
-	"time"
+	"go.uber.org/zap"
 )
 
 func (g *Gate) OnEnvelope(c *Conn, env *internalpb.Envelope) {
@@ -21,8 +23,15 @@ func (g *Gate) OnEnvelope(c *Conn, env *internalpb.Envelope) {
 
 	if c.sessionID == 0 {
 		if msgID != protocol.MsgLoginReq {
-			g.logger.Warn("reject msg before session init msgID=%d", msgID)
-			c.close()
+			g.logger.Warn("reject msg before session init",
+				zap.Int("msg_id", msgID),
+				zap.String("reason", "session_not_initialized"),
+				zap.Int64("session", 0),
+				zap.Int64("player", 0),
+				zap.Int64("sesson_id", c.sessionID),
+				zap.String("trace_id", c.traceID),
+			)
+			c.Close()
 			return
 		}
 
@@ -40,7 +49,26 @@ func (g *Gate) OnEnvelope(c *Conn, env *internalpb.Envelope) {
 
 	s := g.sessions.Get(c.sessionID)
 	if s == nil {
-		c.close()
+		g.logger.Warn("reject msg missing session",
+			zap.Int("msg_id", msgID),
+			zap.String("reason", "session_not_found"),
+			zap.Int64("session", c.sessionID),
+			zap.Int64("player", 0),
+			zap.Int64("sesson_id", c.sessionID),
+			zap.String("trace_id", c.traceID),
+		)
+		c.Close()
+		return
+	}
+	if s.State == SessionOffline {
+		g.logger.Warn("reject msg on offline session",
+			zap.Int("msg_id", msgID),
+			zap.String("reason", "session_offline"),
+			zap.Int64("session", s.ID),
+			zap.Int64("player", s.PlayerID),
+			zap.Int64("sesson_id", c.sessionID),
+			zap.String("trace_id", c.traceID),
+		)
 		return
 	}
 
@@ -62,7 +90,14 @@ func (g *Gate) OnEnvelope(c *Conn, env *internalpb.Envelope) {
 
 		case SessionAuthing:
 			// 忽略重复 LoginReq
-			g.logger.Warn("duplicate login req session=%d", s.ID)
+			g.logger.Warn("duplicate login req",
+				zap.String("reason", "duplicate_login"),
+				zap.Int("msg_id", msgID),
+				zap.Int64("session", s.ID),
+				zap.Int64("player", s.PlayerID),
+				zap.Int64("sesson_id", c.sessionID),
+				zap.String("trace_id", c.traceID),
+			)
 			return
 		}
 	}
@@ -71,9 +106,13 @@ func (g *Gate) OnEnvelope(c *Conn, env *internalpb.Envelope) {
 	// 3️⃣ 权限判断
 	// =========================
 	if s.State == SessionOnline {
-		g.logger.Warn(
-			"unauth msg session=%d msgID=%d",
-			s.ID, msgID,
+		g.logger.Warn("unauth msg",
+			zap.String("reason", "unauthenticated"),
+			zap.Int("msg_id", msgID),
+			zap.Int64("session", s.ID),
+			zap.Int64("player", s.PlayerID),
+			zap.Int64("sesson_id", c.sessionID),
+			zap.String("trace_id", c.traceID),
 		)
 		return
 	}
@@ -92,7 +131,14 @@ func (g *Gate) OnEnvelope(c *Conn, env *internalpb.Envelope) {
 	// =========================
 	rule, ok := router.GetRoute(msgID)
 	if !ok {
-		g.logger.Warn("unknown msgID=%d", msgID)
+		g.logger.Warn("unknown msgID",
+			zap.Int("msg_id", msgID),
+			zap.Int64("session", s.ID),
+			zap.Int64("player", s.PlayerID),
+			zap.String("reason", "unknown_route"),
+			zap.Int64("sesson_id", c.sessionID),
+			zap.String("trace_id", c.traceID),
+		)
 		return
 	}
 
@@ -104,14 +150,20 @@ func (g *Gate) OnEnvelope(c *Conn, env *internalpb.Envelope) {
 	case router.TargetGame:
 		g.sendToGame(env)
 	default:
-		g.logger.Warn("unknown route target=%v msgID=%d", rule.Target, msgID)
+		g.logger.Warn("unknown route target",
+			zap.Int("msg_id", msgID),
+			zap.Int64("session", s.ID),
+			zap.Int64("player", s.PlayerID),
+			zap.String("reason", "unknown_route_target"),
+			zap.Int64("sesson_id", c.sessionID),
+			zap.String("trace_id", c.traceID),
+		)
 	}
 }
 
 func (g *Gate) handleDuplicateLogin(s *Session) {
-	g.logger.Warn(
-		"duplicate login kick old session=%d player=%d",
-		s.ID, s.PlayerID,
-	)
+	fields := append(sessionFields(s), zap.String("reason", "duplicate_login"), zap.Int("msg_id", protocol.MsgLoginReq))
+	fields = append(fields, connFields(s.Conn)...)
+	g.logger.Warn("duplicate login kick old session", fields...)
 	g.Kick(s.ID, "duplicate login")
 }

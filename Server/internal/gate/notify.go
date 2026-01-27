@@ -3,6 +3,7 @@ package gate
 import (
 	"game-server/internal/protocol"
 	"game-server/internal/protocol/internalpb"
+	"go.uber.org/zap"
 )
 
 func (g *Gate) notifyPlayerResume(s *Session) {
@@ -18,10 +19,10 @@ func (g *Gate) notifyPlayerResume(s *Session) {
 
 	g.sendToGame(env)
 
-	g.logger.Info(
-		"notify player resume to game session=%d player=%d",
-		s.ID, s.PlayerID,
-	)
+	fields := append(sessionFields(s), zap.Int("msg_id", protocol.MsgPlayerResumeReq))
+	fields = append(fields, zap.String("reason", "player_resume"))
+	fields = append(fields, connFields(s.Conn)...)
+	g.logger.Info("notify player resume to game", fields...)
 }
 
 func (g *Gate) notifyPlayerOffline(s *Session) {
@@ -37,8 +38,8 @@ func (g *Gate) notifyPlayerOffline(s *Session) {
 
 	g.sendToGame(env)
 
-	g.logger.Info(
-		"notify player offline to game session=%d player=%d",
-		s.ID, s.PlayerID,
-	)
+	fields := append(sessionFields(s), zap.Int("msg_id", protocol.MsgPlayerOfflineNotify))
+	fields = append(fields, zap.String("reason", "player_offline"))
+	fields = append(fields, connFields(s.Conn)...)
+	g.logger.Info("notify player offline to game", fields...)
 }

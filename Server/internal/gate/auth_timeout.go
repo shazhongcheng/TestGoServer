@@ -1,7 +1,12 @@
 // internal/gate/auth_timeout.go
 package gate
 
-import "time"
+import (
+	"time"
+
+	"game-server/internal/protocol"
+	"go.uber.org/zap"
+)
 
 func (g *Gate) checkAuthingTimeout() {
 	now := time.Now()
@@ -12,11 +17,13 @@ func (g *Gate) checkAuthingTimeout() {
 		}
 
 		if now.Sub(s.AuthStart) > g.loginTimeout {
-			g.logger.Warn(
-				"login timeout session=%d",
-				s.ID,
+			fields := append(sessionFields(s),
+				zap.Int("msg_id", protocol.MsgLoginReq),
+				zap.String("reason", "login_timeout"),
 			)
-			g.Kick(s.ID, "login timeout")
+			fields = append(fields, connFields(s.Conn)...)
+			g.logger.Warn("login timeout", fields...)
+			g.onSessionOffline(s, "login timeout")
 		}
 	}
 }

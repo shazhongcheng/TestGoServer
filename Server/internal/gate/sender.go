@@ -1,7 +1,10 @@
 // internal/gate/sender.go
 package gate
 
-import "game-server/internal/protocol/internalpb"
+import (
+	"game-server/internal/protocol/internalpb"
+	"go.uber.org/zap"
+)
 
 func (g *Gate) sendToService(module string, env *internalpb.Envelope) {
 	if g.serviceClient == nil {
@@ -12,7 +15,7 @@ func (g *Gate) sendToService(module string, env *internalpb.Envelope) {
 		env.PlayerId = s.PlayerID
 	}
 	if err := g.serviceClient.Send(env); err != nil {
-		g.logger.Warn("send to service failed: %v", err)
+		g.logger.Warn("send to service failed: %v", zap.Err("err", err))
 	}
 }
 

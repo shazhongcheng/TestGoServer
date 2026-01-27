@@ -62,12 +62,12 @@ func (g *Gate) createSessionForConn(c *Conn) *Session {
 	}
 	data, _ := proto.Marshal(init)
 
-	_ = c.writeEnvelope(&internalpb.Envelope{
+	_ = c.Send(&internalpb.Envelope{
 		MsgId:     protocol.MsgSessionInit,
 		SessionId: s.ID,
 		Payload:   data,
 	})
 
-	g.logger.Info("session init session=%d", s.ID)
+	g.logger.Info("session init", append(sessionFields(s), connFields(c)...)...)
 	return s
 }

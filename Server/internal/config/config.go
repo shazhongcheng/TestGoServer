@@ -7,10 +7,12 @@ import (
 )
 
 type RedisConfig struct {
-	Addr     string `json:"addr"`
-	Password string `json:"password"`
-	DB       int    `json:"db"`
-	UIDKey   string `json:"uid_key"`
+	Addr         string `json:"addr"`
+	Password     string `json:"password"`
+	DB           int    `json:"db"`
+	UIDKey       string `json:"uid_key"`
+	PoolSize     int    `json:"pool_size"`
+	MinIdleConns int    `json:"minIdle_conns"`
 }
 
 type GateConfig struct {

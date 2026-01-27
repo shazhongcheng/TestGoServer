@@ -2,8 +2,10 @@ package gate
 
 import (
 	"context"
-	"game-server/internal/protocol"
 	"time"
+
+	"game-server/internal/protocol"
+	"go.uber.org/zap"
 )
 
 func (g *Gate) onHeartbeat(sessionID int64) {
@@ -15,7 +17,14 @@ func (g *Gate) onHeartbeat(sessionID int64) {
 	_ = g.Reply(sessionID, protocol.MsgHeartbeatRsp, nil)
 
 	if g.debugHeartbeat {
-		g.logger.Debug("heartbeat session=%d", sessionID)
+		var conn *Conn
+		if s != nil {
+			conn = s.Conn
+		}
+		fields := append(sessionFields(s), zap.Int("msg_id", protocol.MsgHeartbeatReq))
+		fields = append(fields, zap.String("reason", "heartbeat"))
+		fields = append(fields, connFields(conn)...)
+		g.logger.Debug("heartbeat", fields...)
 	}
 }
 
@@ -48,8 +57,13 @@ func (g *Gate) checkHeartbeat() {
 			continue
 		}
 		if now.Sub(s.LastSeen) > g.heartbeatTimeout {
-			g.logger.Warn("heartbeat timeout", s.ID)
-			g.Kick(s.ID, "heartbeat timeout")
+			fields := append(sessionFields(s),
+				zap.Int("msg_id", protocol.MsgHeartbeatReq),
+				zap.String("reason", "heartbeat_timeout"),
+			)
+			fields = append(fields, connFields(s.Conn)...)
+			g.logger.Warn("heartbeat timeout", fields...)
+			g.onSessionOffline(s, "heartbeat timeout")
 		}
 	}
 }

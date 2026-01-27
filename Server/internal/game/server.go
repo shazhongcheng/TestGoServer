@@ -2,26 +2,30 @@ package game
 
 import (
 	"context"
-	"log"
 	"net"
 
 	"game-server/internal/player"
 	"game-server/internal/protocol"
 	"game-server/internal/protocol/internalpb"
 	"game-server/internal/transport"
-
+	"go.uber.org/zap"
 	"google.golang.org/protobuf/proto"
 )
 
 type Server struct {
 	addr    string
 	players *PlayerManager
+	logger  *zap.Logger
 }
 
-func NewServer(addr string, store player.Store) *Server {
+func NewServer(addr string, store player.Store, logger *zap.Logger) *Server {
+	if logger == nil {
+		logger = zap.NewNop()
+	}
 	return &Server{
 		addr:    addr,
 		players: NewPlayerManager(store),
+		logger:  logger,
 	}
 }
 
@@ -52,24 +56,46 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 }
 
 func (s *Server) handleConn(conn net.Conn) {
-	defer conn.Close()
+	buffered := transport.NewBufferedConn(conn)
+	defer buffered.Close()
 	for {
-		env, err := transport.ReadEnvelope(conn)
+		env, err := buffered.ReadEnvelope()
 		if err != nil {
 			return
 		}
-		s.handleEnvelope(conn, env)
+		go s.handleEnvelope(buffered, env)
 	}
 }
 
-func (s *Server) handleEnvelope(conn net.Conn, env *internalpb.Envelope) {
-	log.Printf("[Game] player msgId=%d session=%d PlayerId=%d", env.MsgId, env.SessionId, env.PlayerId)
+func (s *Server) handleEnvelope(conn *transport.BufferedConn, env *internalpb.Envelope) {
+	s.logger.Info("game envelope received",
+		zap.Int("msg_id", int(env.MsgId)),
+		zap.Int64("session", env.SessionId),
+		zap.Int64("player", env.PlayerId),
+		zap.String("reason", ""),
+		zap.Int64("conn_id", 0),
+		zap.String("trace_id", ""),
+	)
 	switch int(env.MsgId) {
 	case protocol.MsgPlayerEnterGameReq:
-		log.Printf("[Game] player enter player=%d session=%d", env.PlayerId, env.SessionId)
+		s.logger.Info("player enter",
+			zap.Int("msg_id", int(env.MsgId)),
+			zap.Int64("session", env.SessionId),
+			zap.Int64("player", env.PlayerId),
+			zap.String("reason", "player_enter"),
+			zap.Int64("conn_id", 0),
+			zap.String("trace_id", ""),
+		)
 		info, err := s.players.EnsurePlayer(context.Background(), env.SessionId, env.PlayerId)
 		if err != nil {
-			log.Printf("[Game] load player failed: %v", err)
+			s.logger.Warn("load player failed",
+				zap.Int("msg_id", int(env.MsgId)),
+				zap.Int64("session", env.SessionId),
+				zap.Int64("player", env.PlayerId),
+				zap.String("reason", err.Error()),
+				zap.Int64("conn_id", 0),
+				zap.String("trace_id", ""),
+			)
 			return
 		}
 		initRsp := &internalpb.PlayerInitRsp{
@@ -82,13 +108,34 @@ func (s *Server) handleEnvelope(conn net.Conn, env *internalpb.Envelope) {
 			PlayerId:  env.PlayerId,
 			Payload:   payload,
 		}
-		if err := transport.WriteEnvelope(conn, rsp); err != nil {
-			log.Printf("[Game] send enter rsp failed: %v", err)
+		if err := conn.WriteEnvelope(rsp); err != nil {
+			s.logger.Warn("send enter rsp failed",
+				zap.Int("msg_id", int(env.MsgId)),
+				zap.Int64("session", env.SessionId),
+				zap.Int64("player", env.PlayerId),
+				zap.String("reason", err.Error()),
+				zap.Int64("conn_id", 0),
+				zap.String("trace_id", ""),
+			)
 		}
 	case protocol.MsgLoadPlayerDataReq:
 		info, err := s.players.EnsurePlayer(context.Background(), env.SessionId, env.PlayerId)
+		s.logger.Debug("send MsgLoadPlayerDataReq",
+			zap.Int("msg_id", int(env.MsgId)),
+			zap.Int64("session", env.SessionId),
+			zap.Int64("player", env.PlayerId),
+			zap.Int64("conn_id", 0),
+			zap.String("trace_id", ""),
+		)
 		if err != nil {
-			log.Printf("[Game] load player data failed: %v", err)
+			s.logger.Warn("load player data failed",
+				zap.Int("msg_id", int(env.MsgId)),
+				zap.Int64("session", env.SessionId),
+				zap.Int64("player", env.PlayerId),
+				zap.String("reason", err.Error()),
+				zap.Int64("conn_id", 0),
+				zap.String("trace_id", ""),
+			)
 			return
 		}
 		dataRsp := &internalpb.LoadPlayerDataRsp{
@@ -101,16 +148,37 @@ func (s *Server) handleEnvelope(conn net.Conn, env *internalpb.Envelope) {
 			PlayerId:  env.PlayerId,
 			Payload:   payload,
 		}
-		if err := transport.WriteEnvelope(conn, rsp); err != nil {
-			log.Printf("[Game] send load data rsp failed: %v", err)
+		if err := conn.WriteEnvelope(rsp); err != nil {
+			s.logger.Warn("send load data rsp failed",
+				zap.Int("msg_id", int(env.MsgId)),
+				zap.Int64("session", env.SessionId),
+				zap.Int64("player", env.PlayerId),
+				zap.String("reason", err.Error()),
+				zap.Int64("conn_id", 0),
+				zap.String("trace_id", ""),
+			)
 		}
 	case protocol.MsgPlayerResumeReq:
 		if _, err := s.players.ResumePlayer(context.Background(), env.SessionId, env.PlayerId); err != nil {
-			log.Printf("[Game] resume player failed: %v", err)
+			s.logger.Warn("resume player failed",
+				zap.Int("msg_id", int(env.MsgId)),
+				zap.Int64("session", env.SessionId),
+				zap.Int64("player", env.PlayerId),
+				zap.String("reason", err.Error()),
+				zap.Int64("conn_id", 0),
+				zap.String("trace_id", ""),
+			)
 		}
 	case protocol.MsgPlayerOfflineNotify:
 		s.players.MarkOffline(env.PlayerId)
 	default:
-		log.Printf("[Game] unknown msgID=%d", env.MsgId)
+		s.logger.Warn("unknown msgID",
+			zap.Int("msg_id", int(env.MsgId)),
+			zap.Int64("session", env.SessionId),
+			zap.Int64("player", env.PlayerId),
+			zap.String("reason", "unknown_msg_id"),
+			zap.Int64("conn_id", 0),
+			zap.String("trace_id", ""),
+		)
 	}
 }

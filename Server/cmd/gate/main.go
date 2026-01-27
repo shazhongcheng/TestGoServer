@@ -4,17 +4,17 @@ package main
 import (
 	"context"
 	"flag"
-	"game-server/internal/common/selflog"
-	"game-server/internal/config"
 	"log"
-
 	"net"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
+	"game-server/internal/common/logging"
+	"game-server/internal/config"
 	"game-server/internal/gate"
+	"go.uber.org/zap"
 )
 
 func main() {
@@ -22,9 +22,25 @@ func main() {
 	flag.StringVar(&configPath, "config", "configs/gate.yaml", "gate config path")
 	flag.Parse()
 
+	logger, err := logging.NewLogger("gate")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer func() {
+		_ = logger.Sync()
+	}()
+
 	var cfg config.GateConfig
 	if err := config.Load(configPath, &cfg); err != nil {
-		log.Fatal(err)
+		logger.Error("load config failed",
+			zap.String("reason", err.Error()),
+			zap.Int("msg_id", 0),
+			zap.Int64("session", 0),
+			zap.Int64("player", 0),
+			zap.Int64("conn_id", 0),
+			zap.String("trace_id", ""),
+		)
+		os.Exit(1)
 	}
 
 	// ========== 基础上下文 & 信号 ==========
@@ -35,7 +51,6 @@ func main() {
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 
 	// ========== Gate ==========
-	logger := selflog.NewStdLogger("Gate")
 	g := gate.NewGate(logger)
 	g.UpdateConfig(
 		time.Duration(cfg.HeartbeatIntervalSec)*time.Second,
@@ -49,9 +64,25 @@ func main() {
 	addr := cfg.ListenAddr
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
-		log.Fatalf("gate listen failed: %v", err)
+		logger.Error("gate listen failed",
+			zap.String("reason", err.Error()),
+			zap.Int("msg_id", 0),
+			zap.Int64("session", 0),
+			zap.Int64("player", 0),
+			zap.Int64("conn_id", 0),
+			zap.String("trace_id", ""),
+		)
+		os.Exit(1)
 	}
-	log.Println("[Gate] listening on", addr)
+	logger.Info("gate listening",
+		zap.Int("msg_id", 0),
+		zap.Int64("session", 0),
+		zap.Int64("player", 0),
+		zap.String("reason", ""),
+		zap.Int64("conn_id", 0),
+		zap.String("trace_id", ""),
+		zap.String("addr", addr),
+	)
 
 	// ========== Accept Loop ==========
 	go func() {
@@ -62,7 +93,14 @@ func main() {
 				case <-ctx.Done():
 					return
 				default:
-					log.Println("accept error:", err)
+					logger.Warn("accept error",
+						zap.Int("msg_id", 0),
+						zap.Int64("session", 0),
+						zap.Int64("player", 0),
+						zap.String("reason", err.Error()),
+						zap.Int64("conn_id", 0),
+						zap.String("trace_id", ""),
+					)
 					continue
 				}
 			}
@@ -73,24 +111,42 @@ func main() {
 
 	// ========== 等待退出 ==========
 	<-sigCh
-	log.Println("[Gate] shutting down...")
+	logger.Info("gate shutting down",
+		zap.Int("msg_id", 0),
+		zap.Int64("session", 0),
+		zap.Int64("player", 0),
+		zap.String("reason", ""),
+		zap.Int64("conn_id", 0),
+		zap.String("trace_id", ""),
+	)
 
 	cancel()
 	_ = ln.Close()
 
 	time.Sleep(500 * time.Millisecond)
-	log.Println("[Gate] exited")
+	logger.Info("gate exited",
+		zap.Int("msg_id", 0),
+		zap.Int64("session", 0),
+		zap.Int64("player", 0),
+		zap.String("reason", ""),
+		zap.Int64("conn_id", 0),
+		zap.String("trace_id", ""),
+	)
 }
 
 func handleConn(g *gate.Gate, netConn net.Conn) {
-	defer netConn.Close()
-
 	c := gate.NewConn(netConn, g)
 
 	// 创建 Session
 	//g.NewSession(c)
 
-	log.Println("[Gate] new connection")
+	g.Logger().Info("gate new connection",
+		zap.Int("msg_id", 0),
+		zap.Int64("player", 0),
+		zap.String("reason", ""),
+		zap.Int64("sesson_Id", c.SessonId()),
+		zap.String("trace_id", c.TraceID()),
+	)
 
 	// 启动读循环
 	c.ReadLoop()

@@ -3,8 +3,8 @@ package player
 import "fmt"
 
 const (
-	accountRoleKeyPrefix   = "account:role:"
-	playerProfileKeyPrefix = "player:profile:"
+	accountKeyPrefix = "account:"
+	playerKeyPrefix  = "player:"
 )
 
 type PlayerProfile struct {
@@ -17,14 +17,20 @@ type PlayerProfile struct {
 	Stamina   int64  `json:"stamina"`
 }
 
+// ======================
+// Redis Keys
+// ======================
 func AccountRoleKey(accountID string) string {
-	return fmt.Sprintf("%s%s", accountRoleKeyPrefix, accountID)
+	return fmt.Sprintf("%s%s:role", accountKeyPrefix, accountID)
 }
 
 func PlayerProfileKey(roleID int64) string {
-	return fmt.Sprintf("%s%d", playerProfileKeyPrefix, roleID)
+	return fmt.Sprintf("%s%d:profile", playerKeyPrefix, roleID)
 }
 
+// ======================
+// Factory
+// ======================
 func NewProfile(roleID int64, accountID string) PlayerProfile {
 	return PlayerProfile{
 		RoleID:    roleID,
