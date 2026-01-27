@@ -3,7 +3,9 @@ package main
 
 import (
 	"context"
+	"flag"
 	"game-server/internal/common/selflog"
+	"game-server/internal/config"
 	"log"
 
 	"net"
@@ -13,10 +15,18 @@ import (
 	"time"
 
 	"game-server/internal/gate"
-	"game-server/internal/service"
 )
 
 func main() {
+	var configPath string
+	flag.StringVar(&configPath, "config", "configs/gate.yaml", "gate config path")
+	flag.Parse()
+
+	var cfg config.GateConfig
+	if err := config.Load(configPath, &cfg); err != nil {
+		log.Fatal(err)
+	}
+
 	// ========== 基础上下文 & 信号 ==========
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -24,19 +34,19 @@ func main() {
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 
-	// ========== Service（先用本地内存版） ==========
-	svc := service.NewServer()
-
-	// TODO：后面你会在这里 RegisterModule(login/chat/...)
-	// svc.RegisterModule(...)
-
 	// ========== Gate ==========
 	logger := selflog.NewStdLogger("Gate")
-	g := gate.NewGate(logger, svc)
+	g := gate.NewGate(logger)
+	g.UpdateConfig(
+		time.Duration(cfg.HeartbeatIntervalSec)*time.Second,
+		time.Duration(cfg.HeartbeatTimeoutSec)*time.Second,
+		time.Duration(cfg.GCIntervalSec)*time.Second,
+	)
 	g.Start(ctx)
+	g.ConnectService(ctx, cfg.ServiceAddr)
 
 	// ========== TCP Listener ==========
-	addr := ":9000"
+	addr := cfg.ListenAddr
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
 		log.Fatalf("gate listen failed: %v", err)

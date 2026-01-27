@@ -1,0 +1,35 @@
+import argparse
+import threading
+import time
+
+from client_base import GameClient
+
+
+def run_client(server_addr, idx):
+    client = GameClient(server_addr)
+    client.connect()
+    client.login(token=f"token-{idx}")
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--host", default="127.0.0.1")
+    parser.add_argument("--port", type=int, default=9000)
+    parser.add_argument("--count", type=int, default=100)
+    parser.add_argument("--delay", type=float, default=0.01)
+    args = parser.parse_args()
+
+    server_addr = (args.host, args.port)
+    threads = []
+    for idx in range(args.count):
+        thread = threading.Thread(target=run_client, args=(server_addr, idx), daemon=True)
+        thread.start()
+        threads.append(thread)
+        time.sleep(args.delay)
+
+    for thread in threads:
+        thread.join()
+
+
+if __name__ == "__main__":
+    main()

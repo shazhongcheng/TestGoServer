@@ -1,2 +1,8 @@
 ﻿.idea
 Client/internal_pb/__pycache__
+Server/internal/protocol/internalpb
+Client/internal_pb/error_pb2.py
+Client/internal_pb/gate_pb2.py
+Client/internal_pb/internal_pb2.py
+Client/internal_pb/login_pb2.py
+Client/__pycache__

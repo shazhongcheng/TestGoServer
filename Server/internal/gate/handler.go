@@ -31,7 +31,14 @@ func (g *Gate) OnEnvelope(c *Conn, env *internalpb.Envelope) {
 			g.logger.Warn("unauth msg session=%d msgID=%d", sessionID, msgID)
 			return
 		}
+
+		//TODO 有问题 需要处理为踢玩家！
+		if msgID == protocol.MsgLoginReq && s.State == SessionAuthenticated {
+			g.logger.Warn("duplicate login session=%d player=%d", s.ID, s.PlayerID)
+			return
+		}
 	}
+
 	// =========================
 	// 2️⃣ Gate 控制消息（不进 Router）
 	// =========================

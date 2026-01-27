@@ -3,6 +3,7 @@ package gate
 
 import (
 	"encoding/binary"
+	"game-server/internal/protocol"
 	"game-server/internal/protocol/internalpb"
 	"google.golang.org/protobuf/proto"
 	"io"
@@ -94,11 +95,11 @@ func (g *Gate) onConnClose(c *Conn) {
 func (g *Gate) onResume(c *Conn, req *ResumeReq) error {
 	s := g.sessions.Get(req.SessionId)
 	if s == nil {
-		return ErrInvalidSession
+		return protocol.InternalErrInvalidSession
 	}
 
 	if !g.verifyToken(s, req.Token) {
-		return ErrInvalidToken
+		return protocol.InternalErrInvalidToken
 	}
 
 	// 重新绑定

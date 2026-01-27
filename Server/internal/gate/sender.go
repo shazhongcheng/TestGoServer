@@ -4,14 +4,18 @@ package gate
 import "game-server/internal/protocol/internalpb"
 
 func (g *Gate) sendToService(module string, env *internalpb.Envelope) {
-	if g.service == nil {
+	if g.serviceClient == nil {
 		g.logger.Warn("service not initialized")
 		return
 	}
-	ctx := g.makeServiceContext(env.GetSessionId(), int(env.GetMsgId()), env.GetPayload())
-	g.service.Handle(ctx)
+	if s := g.sessions.Get(env.GetSessionId()); s != nil {
+		env.PlayerId = s.PlayerID
+	}
+	if err := g.serviceClient.Send(env); err != nil {
+		g.logger.Warn("send to service failed: %v", err)
+	}
 }
 
 func (g *Gate) sendToGame(env *internalpb.Envelope) {
-	// TODO: game 服务未接入，预留
+	g.sendToService("", env)
 }

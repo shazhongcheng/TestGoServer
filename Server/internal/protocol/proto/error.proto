@@ -1,0 +1,10 @@
+// protocol/proto/common.proto
+syntax = "proto3";
+
+package internalpb;
+option go_package = "game-server/protocol/internalpb";
+
+message ErrorRsp {
+  int32 code = 1;      // ErrorCode
+  string message = 2; // 可选，用于调试
+}

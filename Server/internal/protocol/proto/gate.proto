@@ -12,3 +12,9 @@ message ResumeRsp {
   bool ok          = 1;
   string reason    = 2;
 }
+
+
+message SessionInit {
+  int64 session_id = 1;
+  string token = 2; // resume token（测试阶段可简化）
+}

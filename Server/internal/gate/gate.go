@@ -3,12 +3,13 @@ package gate
 import (
 	"context"
 	"errors"
-	"game-server/internal/common/selflog"
-	"game-server/internal/protocol/internalpb"
+	"game-server/internal/protocol"
+	"google.golang.org/protobuf/proto"
 	"sync/atomic"
 	"time"
 
-	"game-server/internal/service"
+	"game-server/internal/common/selflog"
+	"game-server/internal/protocol/internalpb"
 )
 
 var ErrSessionNotFound = errors.New("session not found")
@@ -19,7 +20,7 @@ type Gate struct {
 
 	sessions *SessionManager
 
-	service *service.Server
+	serviceClient *remoteClient
 
 	heartbeatInterval time.Duration
 	heartbeatTimeout  time.Duration
@@ -28,14 +29,13 @@ type Gate struct {
 	nextID int64
 }
 
-func NewGate(logger selflog.Logger, svc *service.Server) *Gate {
+func NewGate(logger selflog.Logger) *Gate {
 	if logger == nil {
 		logger = selflog.NewNopLogger()
 	}
 	return &Gate{
 		logger:            logger,
 		sessions:          NewSessionManager(),
-		service:           svc,
 		heartbeatInterval: 10 * time.Second,
 		heartbeatTimeout:  30 * time.Second,
 		gcInterval:        1 * time.Minute,
@@ -73,6 +73,21 @@ func (g *Gate) NewSession(conn *Conn) *Session {
 	s.LastSeen = time.Now()
 	conn.sessionID = s.ID
 	g.sessions.Add(s)
+
+	// ⭐ 核心：SessionInit
+	init := &internalpb.SessionInit{
+		SessionId: s.ID,
+		Token:     s.Token, // 现在可以 mock
+	}
+	data, _ := proto.Marshal(init)
+
+	_ = conn.writeEnvelope(&internalpb.Envelope{
+		MsgId:     protocol.MsgSessionInit,
+		SessionId: s.ID,
+		Payload:   data,
+	})
+
+	g.logger.Info("session init session=%d", s.ID)
 	return s
 }
 
@@ -88,4 +103,21 @@ func (g *Gate) Kick(sessionID int64, reason string) error {
 
 	s.Conn.close()
 	return nil
+}
+
+func (g *Gate) ConnectService(ctx context.Context, addr string) {
+	g.serviceClient = newRemoteClient("service", addr, g.logger, g.OnServiceEnvelope)
+	g.serviceClient.Start(ctx)
+}
+
+func (g *Gate) UpdateConfig(interval, timeout, gc time.Duration) {
+	if interval > 0 {
+		g.heartbeatInterval = interval
+	}
+	if timeout > 0 {
+		g.heartbeatTimeout = timeout
+	}
+	if gc > 0 {
+		g.gcInterval = gc
+	}
 }

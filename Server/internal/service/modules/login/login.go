@@ -6,7 +6,18 @@ const (
 	MsgLoginResp = 1002
 )
 
-type Module struct{}
+type Module struct {
+	svc *LoginService
+}
 
 func (m *Module) Name() string { return "login" }
-func (m *Module) Init() error  { return nil }
+func (m *Module) Init() error {
+	if m.svc == nil {
+		m.svc = NewLoginService(nil)
+	}
+	return nil
+}
+
+func NewModule(svc *LoginService) *Module {
+	return &Module{svc: svc}
+}

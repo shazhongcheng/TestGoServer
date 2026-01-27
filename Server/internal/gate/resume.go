@@ -1,9 +1,9 @@
 package gate
 
 import (
-	"game-server/internal/protocol"
 	"time"
 
+	"game-server/internal/protocol"
 	"game-server/internal/protocol/internalpb"
 
 	"google.golang.org/protobuf/proto"
@@ -25,7 +25,11 @@ func (g *Gate) handleResume(c *Conn, env *internalpb.Envelope) {
 
 	// 重新绑定
 	s.Conn = c
-	s.State = SessionOnline
+	if s.PlayerID != 0 {
+		s.State = SessionAuthenticated
+	} else {
+		s.State = SessionOnline
+	}
 	s.LastSeen = time.Now()
 	c.sessionID = s.ID
 

@@ -10,13 +10,12 @@ const (
 )
 
 type RouteRule struct {
-	MsgID  int
 	Target TargetType
 	Module string // service 模块名
 }
 
 var routeTable = []RouteRule{
-	{MsgID: 1001, Target: TargetService, Module: "login"},
-	{MsgID: 2001, Target: TargetService, Module: "chat"},
-	{MsgID: 3001, Target: TargetGame, Module: ""},
+	{Target: TargetService, Module: "login"},
+	{Target: TargetService, Module: "chat"},
+	{Target: TargetGame, Module: ""},
 }

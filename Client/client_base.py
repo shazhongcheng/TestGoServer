@@ -2,34 +2,40 @@ import socket
 import struct
 import threading
 import time
-import sys
 
 from internal_pb.internal_pb2 import Envelope
 from internal_pb.gate_pb2 import ResumeReq
-
-SERVER_ADDR = ("127.0.0.1", 9000)
+from internal_pb.login_pb2 import LoginReq, LoginRsp
 
 MSG_RESUME_REQ = 1
 MSG_RESUME_RSP = 2
 MSG_HEARTBEAT_REQ = 10
 MSG_HEARTBEAT_RSP = 11
+MSG_LOGIN_REQ = 1001
+MSG_LOGIN_RSP = 1002
+MSG_ENTER_GAME_REQ = 3001
+MSG_ENTER_GAME_RSP = 3002
 
 
-class Client:
-    def __init__(self):
+def make_resume_token(session_id: int) -> str:
+    return f"session:{session_id}"
+
+
+class GameClient:
+    def __init__(self, server_addr):
+        self.server_addr = server_addr
         self.sock = None
-        self.session_id = 1       # 测试写死
-        self.token = "xxx"        # 测试写死
+        self.session_id = 0
+        self.token = ""
         self.running = False
+        self.lock = threading.Lock()
 
-    # ---------- 网络基础 ----------
     def connect(self):
         self.sock = socket.socket()
-        self.sock.connect(SERVER_ADDR)
+        self.sock.connect(self.server_addr)
         self.running = True
-        print("[Client] connected")
-
         threading.Thread(target=self.recv_loop, daemon=True).start()
+        print("[Client] connected")
 
     def close(self):
         self.running = False
@@ -39,21 +45,25 @@ class Client:
         print("[Client] disconnected")
 
     def send_envelope(self, msg_id, payload=b""):
-        env = Envelope(
-            msg_id=msg_id,
-            session_id=self.session_id,
-            payload=payload
-        )
-        data = env.SerializeToString()
-        pkt = struct.pack(">I", len(data)) + data
-        self.sock.sendall(pkt)
+        with self.lock:
+            env = Envelope(
+                msg_id=msg_id,
+                session_id=self.session_id,
+                payload=payload,
+            )
+            data = env.SerializeToString()
+            pkt = struct.pack(">I", len(data)) + data
+            self.sock.sendall(pkt)
 
-    # ---------- 协议 ----------
+    def login(self, token="test-token"):
+        req = LoginReq(token=token)
+        print("[Client] send LoginReq")
+        self.send_envelope(MSG_LOGIN_REQ, req.SerializeToString())
+
     def resume(self):
-        req = ResumeReq(
-            session_id=self.session_id,
-            token=self.token
-        )
+        if not self.session_id:
+            raise RuntimeError("session_id not set, cannot resume")
+        req = ResumeReq(session_id=self.session_id, token=self.token)
         print("[Client] send ResumeReq")
         self.send_envelope(MSG_RESUME_REQ, req.SerializeToString())
 
@@ -63,28 +73,23 @@ class Client:
             try:
                 self.send_envelope(MSG_HEARTBEAT_REQ)
                 print("[Client] heartbeat")
-            except Exception as e:
-                print("[Client] heartbeat failed:", e)
+            except Exception as exc:
+                print("[Client] heartbeat failed:", exc)
                 return
 
-    # ---------- 接收 ----------
     def recv_loop(self):
         try:
             while self.running:
                 header = self._recv_exact(4)
                 if not header:
                     break
-
                 size = struct.unpack(">I", header)[0]
                 body = self._recv_exact(size)
-
                 env = Envelope()
                 env.ParseFromString(body)
                 self.on_message(env)
-
-        except Exception as e:
-            print("[Client] recv error:", e)
-
+        except Exception as exc:
+            print("[Client] recv error:", exc)
         self.close()
 
     def _recv_exact(self, n):
@@ -96,36 +101,22 @@ class Client:
             data += chunk
         return data
 
-    def on_message(self, env):
-        if env.msg_id == MSG_RESUME_RSP:
+    def on_message(self, env: Envelope):
+        if env.session_id and env.session_id != self.session_id:
+            self.session_id = env.session_id
+            self.token = make_resume_token(self.session_id)
+
+        if env.msg_id == MSG_LOGIN_RSP:
+            rsp = LoginRsp()
+            rsp.ParseFromString(env.payload)
+            print(f"[Client] LoginRsp player={rsp.player_id}")
+            threading.Thread(target=self.heartbeat_loop, daemon=True).start()
+        elif env.msg_id == MSG_ENTER_GAME_RSP:
+            print("[Client] EnterGameRsp")
+        elif env.msg_id == MSG_RESUME_RSP:
             print("[Client] ResumeRsp OK")
             threading.Thread(target=self.heartbeat_loop, daemon=True).start()
         elif env.msg_id == MSG_HEARTBEAT_RSP:
             print("[Client] heartbeat rsp")
         else:
             print("[Client] recv msg:", env.msg_id)
-
-
-# ---------- 控制台 ----------
-def main():
-    c = Client()
-    c.connect()
-    c.resume()
-
-    while True:
-        cmd = input("> ").strip()
-        if cmd == "quit":
-            sys.exit(0)
-        elif cmd == "close":
-            c.close()
-        elif cmd == "reconnect":
-            c.close()
-            time.sleep(1)
-            c.connect()
-            c.resume()
-        else:
-            print("commands: close | reconnect | quit")
-
-
-if __name__ == "__main__":
-    main()
