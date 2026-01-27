@@ -8,7 +8,9 @@ import (
 	"syscall"
 
 	"game-server/internal/config"
+	"game-server/internal/db"
 	"game-server/internal/game"
+	"game-server/internal/player"
 )
 
 func main() {
@@ -24,7 +26,9 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	server := game.NewServer(cfg.ListenAddr)
+	redisClient := db.NewRedisClient(cfg.Redis)
+	playerStore := player.NewRedisStore(redisClient)
+	server := game.NewServer(cfg.ListenAddr, playerStore)
 	log.Printf("[Game] listening on %s", cfg.ListenAddr)
 	if err := server.ListenAndServe(ctx); err != nil {
 		log.Fatal(err)

@@ -8,7 +8,8 @@ from client_base import GameClient
 def run_client(server_addr, idx):
     client = GameClient(server_addr)
     client.connect()
-    client.login(token=f"token-{idx}")
+    account_id = f"test{idx}"
+    client.login(token=account_id, account_id=account_id)
 
 
 def main():
@@ -21,7 +22,7 @@ def main():
 
     server_addr = (args.host, args.port)
     threads = []
-    for idx in range(args.count):
+    for idx in range(1, args.count + 1):
         thread = threading.Thread(target=run_client, args=(server_addr, idx), daemon=True)
         thread.start()
         threads.append(thread)

@@ -12,45 +12,83 @@ func (g *Gate) OnEnvelope(c *Conn, env *internalpb.Envelope) {
 	msgID := int(env.MsgId)
 
 	// =========================
-	// 1️⃣ Session 尚未绑定：只允许 Resume
+	// 1️⃣ Resume 协商：优先处理
 	// =========================
-	if c.sessionID == 0 {
-		if msgID != protocol.MsgResumeReq {
-			g.logger.Warn("reject msg before resume, msgID=%d", msgID)
-			c.close()
-			return
-		}
+	if msgID == protocol.MsgResumeReq {
 		g.handleResume(c, env)
 		return
 	}
 
-	sessionID := c.sessionID
-	if s := g.sessions.Get(sessionID); s != nil {
-		if s.State != SessionAuthenticated &&
-			msgID != protocol.MsgLoginReq {
-			g.logger.Warn("unauth msg session=%d msgID=%d", sessionID, msgID)
+	if c.sessionID == 0 {
+		if msgID != protocol.MsgLoginReq {
+			g.logger.Warn("reject msg before session init msgID=%d", msgID)
+			c.close()
 			return
 		}
 
-		//TODO 有问题 需要处理为踢玩家！
-		if msgID == protocol.MsgLoginReq && s.State == SessionAuthenticated {
-			g.logger.Warn("duplicate login session=%d player=%d", s.ID, s.PlayerID)
-			return
-		}
+		// ⭐ 只有这里才创建 Session
+		s := g.createSessionForConn(c)
+
+		// 继续走 Login 流程
+		g.sendToService("login", &internalpb.Envelope{
+			MsgId:     int32(msgID),
+			SessionId: s.ID,
+			Payload:   env.Payload,
+		})
+		return
 	}
 
-	// =========================
-	// 2️⃣ Gate 控制消息（不进 Router）
-	// =========================
-	switch msgID {
-
-	case protocol.MsgHeartbeatReq:
-		g.onHeartbeat(sessionID)
+	s := g.sessions.Get(c.sessionID)
+	if s == nil {
+		c.close()
 		return
 	}
 
 	// =========================
-	// 3️⃣ 业务消息 → Router
+	// 2️⃣ Login 流程
+	// =========================
+	if msgID == protocol.MsgLoginReq {
+		switch s.State {
+
+		case SessionAuthenticated:
+			// 重复登录策略（下面第四部分讲）
+			g.handleDuplicateLogin(s)
+			return
+
+		case SessionOnline:
+			// ⭐ 进入 Authing
+			s.State = SessionAuthing
+			s.AuthStart = time.Now()
+
+		case SessionAuthing:
+			// 忽略重复 LoginReq
+			g.logger.Warn("duplicate login req session=%d", s.ID)
+			return
+		}
+	}
+
+	// =========================
+	// 3️⃣ 权限判断
+	// =========================
+	if s.State == SessionOnline {
+		g.logger.Warn(
+			"unauth msg session=%d msgID=%d",
+			s.ID, msgID,
+		)
+		return
+	}
+
+	// =========================
+	// 4️⃣ Gate 控制消息
+	// =========================
+	switch msgID {
+	case protocol.MsgHeartbeatReq:
+		g.onHeartbeat(s.ID)
+		return
+	}
+
+	// =========================
+	// 5️⃣ 业务路由
 	// =========================
 	rule, ok := router.GetRoute(msgID)
 	if !ok {
@@ -58,19 +96,22 @@ func (g *Gate) OnEnvelope(c *Conn, env *internalpb.Envelope) {
 		return
 	}
 
-	// 更新活跃时间（业务消息也算活跃）
-	if s := g.sessions.Get(sessionID); s != nil {
-		s.LastSeen = time.Now()
-	}
+	s.LastSeen = time.Now()
 
 	switch rule.Target {
 	case router.TargetService:
 		g.sendToService(rule.Module, env)
-
 	case router.TargetGame:
 		g.sendToGame(env)
-
 	default:
 		g.logger.Warn("unknown route target=%v msgID=%d", rule.Target, msgID)
 	}
+}
+
+func (g *Gate) handleDuplicateLogin(s *Session) {
+	g.logger.Warn(
+		"duplicate login kick old session=%d player=%d",
+		s.ID, s.PlayerID,
+	)
+	g.Kick(s.ID, "duplicate login")
 }

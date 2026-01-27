@@ -29,8 +29,9 @@ type ServiceConfig struct {
 }
 
 type GameConfig struct {
-	ListenAddr string `json:"listen_addr"`
-	ServerID   string `json:"server_id"`
+	ListenAddr string      `json:"listen_addr"`
+	ServerID   string      `json:"server_id"`
+	Redis      RedisConfig `json:"redis"`
 }
 
 func Load(path string, out any) error {

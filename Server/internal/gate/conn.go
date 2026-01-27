@@ -89,7 +89,7 @@ func (g *Gate) onConnClose(c *Conn) {
 	s.State = SessionOffline
 	s.LastSeen = time.Now()
 
-	// 通知 Game / Service：玩家离线（可选）
+	g.notifyPlayerOffline(s)
 }
 
 func (g *Gate) onResume(c *Conn, req *ResumeReq) error {

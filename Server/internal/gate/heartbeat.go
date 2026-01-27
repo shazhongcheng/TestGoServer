@@ -67,6 +67,7 @@ func (g *Gate) gcLoop(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
+			g.checkAuthingTimeout()
 			g.sessions.GC(g.heartbeatTimeout)
 		}
 	}

@@ -1,0 +1,24 @@
+// protocol/game.proto
+syntax = "proto3";
+
+package internalpb;
+option go_package = "game-server/protocol/internalpb";
+
+message PlayerData {
+  int64 role_id = 1;
+  string nickname = 2;
+  int32 level = 3;
+  int64 exp = 4;
+  int64 gold = 5;
+  int64 stamina = 6;
+}
+
+message PlayerInitRsp {
+  PlayerData data = 1;
+}
+
+message LoadPlayerDataReq {}
+
+message LoadPlayerDataRsp {
+  PlayerData data = 1;
+}

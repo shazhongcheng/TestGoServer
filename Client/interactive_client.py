@@ -9,7 +9,7 @@ SERVER_ADDR = ("127.0.0.1", 9000)
 def main():
     client = GameClient(SERVER_ADDR)
     client.connect()
-    client.login()
+    client.login(account_id="test1", token="test1")
 
     while True:
         cmd = input("> ").strip()
@@ -23,9 +23,11 @@ def main():
             client.connect()
             client.resume()
         elif cmd == "login":
-            client.login()
+            client.login(account_id="test1", token="test1")
+        elif cmd == "load":
+            client.load_player_data()
         else:
-            print("commands: login | close | reconnect | quit")
+            print("commands: login | load | close | reconnect | quit")
 
 
 if __name__ == "__main__":

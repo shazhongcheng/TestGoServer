@@ -6,3 +6,4 @@ Client/internal_pb/gate_pb2.py
 Client/internal_pb/internal_pb2.py
 Client/internal_pb/login_pb2.py
 Client/__pycache__
+Client/internal_pb/game_pb2.py

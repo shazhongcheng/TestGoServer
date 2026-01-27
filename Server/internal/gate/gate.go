@@ -27,6 +27,8 @@ type Gate struct {
 	gcInterval        time.Duration
 
 	nextID int64
+
+	loginTimeout time.Duration
 }
 
 func NewGate(logger selflog.Logger) *Gate {
@@ -39,6 +41,7 @@ func NewGate(logger selflog.Logger) *Gate {
 		heartbeatInterval: 10 * time.Second,
 		heartbeatTimeout:  30 * time.Second,
 		gcInterval:        1 * time.Minute,
+		loginTimeout:      10 * time.Second,
 	}
 }
 

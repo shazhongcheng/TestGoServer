@@ -4,17 +4,22 @@ import threading
 import time
 
 from internal_pb.internal_pb2 import Envelope
-from internal_pb.gate_pb2 import ResumeReq
+from internal_pb.gate_pb2 import ResumeReq, SessionInit
 from internal_pb.login_pb2 import LoginReq, LoginRsp
+from internal_pb.game_pb2 import LoadPlayerDataReq, LoadPlayerDataRsp, PlayerInitRsp
 
 MSG_RESUME_REQ = 1
 MSG_RESUME_RSP = 2
+MSG_SESSION_INIT = 3
+
 MSG_HEARTBEAT_REQ = 10
 MSG_HEARTBEAT_RSP = 11
 MSG_LOGIN_REQ = 1001
 MSG_LOGIN_RSP = 1002
 MSG_ENTER_GAME_REQ = 3001
 MSG_ENTER_GAME_RSP = 3002
+MSG_LOAD_PLAYER_DATA_REQ = 3003
+MSG_LOAD_PLAYER_DATA_RSP = 3004
 
 
 def make_resume_token(session_id: int) -> str:
@@ -26,6 +31,7 @@ class GameClient:
         self.server_addr = server_addr
         self.sock = None
         self.session_id = 0
+        self.player_id = 0
         self.token = ""
         self.running = False
         self.lock = threading.Lock()
@@ -49,14 +55,15 @@ class GameClient:
             env = Envelope(
                 msg_id=msg_id,
                 session_id=self.session_id,
+                player_id = self.player_id,
                 payload=payload,
             )
             data = env.SerializeToString()
             pkt = struct.pack(">I", len(data)) + data
             self.sock.sendall(pkt)
 
-    def login(self, token="test-token"):
-        req = LoginReq(token=token)
+    def login(self, token="test-token", account_id="test1", platform=0):
+        req = LoginReq(token=token, account_id=account_id, platform=platform)
         print("[Client] send LoginReq")
         self.send_envelope(MSG_LOGIN_REQ, req.SerializeToString())
 
@@ -66,6 +73,11 @@ class GameClient:
         req = ResumeReq(session_id=self.session_id, token=self.token)
         print("[Client] send ResumeReq")
         self.send_envelope(MSG_RESUME_REQ, req.SerializeToString())
+
+    def load_player_data(self):
+        req = LoadPlayerDataReq()
+        print("[Client] send LoadPlayerDataReq")
+        self.send_envelope(MSG_LOAD_PLAYER_DATA_REQ, req.SerializeToString())
 
     def heartbeat_loop(self):
         while self.running:
@@ -102,21 +114,31 @@ class GameClient:
         return data
 
     def on_message(self, env: Envelope):
-        if env.session_id and env.session_id != self.session_id:
+        if env.msg_id == MSG_SESSION_INIT:
+            print(f"[Client] receive session_id = {env.session_id}")
+            init = SessionInit()
+            init.ParseFromString(env.payload)
             self.session_id = env.session_id
-            self.token = make_resume_token(self.session_id)
+            self.token = init.token
 
         if env.msg_id == MSG_LOGIN_RSP:
             rsp = LoginRsp()
             rsp.ParseFromString(env.payload)
             print(f"[Client] LoginRsp player={rsp.player_id}")
+            self.player_id=rsp.player_id
             threading.Thread(target=self.heartbeat_loop, daemon=True).start()
         elif env.msg_id == MSG_ENTER_GAME_RSP:
-            print("[Client] EnterGameRsp")
+            rsp = PlayerInitRsp()
+            rsp.ParseFromString(env.payload)
+            print(f"[Client] EnterGameRsp role={rsp.data.role_id}")
         elif env.msg_id == MSG_RESUME_RSP:
             print("[Client] ResumeRsp OK")
             threading.Thread(target=self.heartbeat_loop, daemon=True).start()
         elif env.msg_id == MSG_HEARTBEAT_RSP:
             print("[Client] heartbeat rsp")
+        elif env.msg_id == MSG_LOAD_PLAYER_DATA_RSP:
+            rsp = LoadPlayerDataRsp()
+            rsp.ParseFromString(env.payload)
+            print(f"[Client] LoadPlayerDataRsp role={rsp.data.role_id}")
         else:
             print("[Client] recv msg:", env.msg_id)

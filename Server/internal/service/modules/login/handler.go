@@ -64,7 +64,11 @@ func (m *Module) onLogin(ctx *service.Context) error {
 		)
 	}
 
-	playerID, err := m.svc.NextUID(ctx)
+	accountID := req.AccountId
+	if accountID == "" {
+		accountID = req.Token
+	}
+	playerID, _, err := m.svc.ResolveRoleID(ctx, accountID)
 	if err != nil {
 		return err
 	}

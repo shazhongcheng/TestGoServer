@@ -43,8 +43,13 @@ const (
 // =======================
 const (
 	// Game Logic
-	MsgGameBegin          = 3000
-	MsgPlayerEnterGameReq = 3001
-	MsgPlayerEnterGameRsp = 3002
-	MsgGameEnd            = 4000
+	MsgGameBegin           = 3000
+	MsgPlayerEnterGameReq  = 3001
+	MsgPlayerEnterGameRsp  = 3002
+	MsgLoadPlayerDataReq   = 3003
+	MsgLoadPlayerDataRsp   = 3004
+	MsgPlayerResumeReq     = 3005
+	MsgPlayerOfflineNotify = 3006
+	//MsgPlayerReEnterGameReq = 3007
+	MsgGameEnd = 4000
 )

@@ -31,6 +31,16 @@ func (g *Gate) onLoginRsp(sessionID int64, payload []byte) {
 		return
 	}
 
+	// ⭐ 顶号处理
+	old := g.sessions.BindPlayer(s, rsp.PlayerId)
+	if old != nil && old.ID != s.ID {
+		g.logger.Warn(
+			"kick old session=%d player=%d",
+			old.ID, rsp.PlayerId,
+		)
+		g.Kick(old.ID, "duplicate login")
+	}
+
 	s.PlayerID = rsp.PlayerId
 	s.State = SessionAuthenticated
 

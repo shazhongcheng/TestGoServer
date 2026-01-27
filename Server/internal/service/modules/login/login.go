@@ -13,7 +13,7 @@ type Module struct {
 func (m *Module) Name() string { return "login" }
 func (m *Module) Init() error {
 	if m.svc == nil {
-		m.svc = NewLoginService(nil)
+		m.svc = NewLoginService(nil, nil)
 	}
 	return nil
 }

@@ -88,7 +88,7 @@ func handleConn(g *gate.Gate, netConn net.Conn) {
 	c := gate.NewConn(netConn, g)
 
 	// 创建 Session
-	g.NewSession(c)
+	//g.NewSession(c)
 
 	log.Println("[Gate] new connection")
 

@@ -10,6 +10,7 @@ import (
 
 	"game-server/internal/config"
 	"game-server/internal/db"
+	"game-server/internal/player"
 	"game-server/internal/protocol/internalpb"
 	"game-server/internal/service"
 	"game-server/internal/service/modules/chat"
@@ -29,7 +30,8 @@ func main() {
 	}
 
 	uidClient := db.NewRedisClient(cfg.Redis)
-	loginSvc := login.NewLoginService(uidClient)
+	playerStore := player.NewRedisStore(uidClient)
+	loginSvc := login.NewLoginService(uidClient, playerStore)
 
 	if err := srv.RegisterModule(login.NewModule(loginSvc)); err != nil {
 		log.Fatal(err)
