@@ -2,12 +2,25 @@ package transport
 
 import (
 	"encoding/binary"
+	"fmt"
 	"io"
 	"net"
 
 	"game-server/internal/protocol/internalpb"
 	"google.golang.org/protobuf/proto"
 )
+
+const defaultMaxEnvelopeSize = 4 * 1024 * 1024
+
+var maxEnvelopeSize uint32 = defaultMaxEnvelopeSize
+
+func SetMaxEnvelopeSize(size uint32) {
+	if size == 0 {
+		maxEnvelopeSize = defaultMaxEnvelopeSize
+		return
+	}
+	maxEnvelopeSize = size
+}
 
 func ReadEnvelope(conn net.Conn) (*internalpb.Envelope, error) {
 	return readEnvelope(conn)
@@ -24,6 +37,9 @@ func readEnvelope(reader io.Reader) (*internalpb.Envelope, error) {
 	}
 
 	size := binary.BigEndian.Uint32(sizeBuf[:])
+	if maxEnvelopeSize > 0 && size > maxEnvelopeSize {
+		return nil, fmt.Errorf("envelope too large: %d > %d", size, maxEnvelopeSize)
+	}
 	data := make([]byte, size)
 	if _, err := io.ReadFull(reader, data); err != nil {
 		return nil, err

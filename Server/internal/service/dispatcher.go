@@ -16,6 +16,19 @@ func NewDispatcher(reg *Registry, logger *zap.Logger) *Dispatcher {
 }
 
 func (d *Dispatcher) Dispatch(ctx *Context) {
+	defer func() {
+		if r := recover(); r != nil {
+			d.logger.Error("handler panic",
+				zap.Any("panic", r),
+				zap.Int("msg_id", ctx.MsgID),
+				zap.Int64("session", ctx.SessionID),
+				zap.Int64("player", ctx.PlayerID),
+				zap.Int64("conn_id", 0),
+				zap.String("trace_id", ""),
+			)
+		}
+	}()
+
 	handler, ok := d.registry.GetHandler(ctx.MsgID)
 	if !ok {
 		d.logger.Warn("no handler for msgID",

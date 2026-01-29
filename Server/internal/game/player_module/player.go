@@ -3,6 +3,7 @@ package player_module
 
 import (
 	"errors"
+	"fmt"
 	//"game-server/internal/game"
 	"game-server/internal/player_db"
 	"game-server/internal/protocol/internalpb"
@@ -59,24 +60,45 @@ func NewPlayer(playerID, sessionID int64, profile player_db.PlayerProfile, modul
 func (p *Player) loop() {
 	for msg := range p.inbox {
 		var rsp *internalpb.Envelope
+		replied := false
 
-		for _, m := range p.modules {
-			if !m.CanHandle(msg.MsgID) {
-				continue
-			}
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					// TODO: logger hook
+					if msg.Reply != nil && !replied {
+						msg.Reply <- nil
+						replied = true
+					}
+				}
+			}()
 
-			var handled bool
-			var err error
-			rsp, handled, err = m.Handle(msg.MsgID, msg.Env)
-			if err != nil {
-				// TODO: logger hook
-			}
-			if handled {
-				break
-			}
-		}
+			for _, m := range p.modules {
+				if !m.CanHandle(msg.MsgID) {
+					continue
+				}
 
-		if msg.Reply != nil {
+				var handled bool
+				var err error
+				func() {
+					defer func() {
+						if r := recover(); r != nil {
+							err = fmt.Errorf("player module panic: %v", r)
+							handled = false
+						}
+					}()
+					rsp, handled, err = m.Handle(msg.MsgID, msg.Env)
+				}()
+				if err != nil {
+					// TODO: logger hook
+				}
+				if handled {
+					break
+				}
+			}
+		}()
+
+		if msg.Reply != nil && !replied {
 			msg.Reply <- rsp
 		}
 	}
@@ -92,12 +114,6 @@ func (p *Player) Dispatch(
 	}
 
 	reply := make(chan *internalpb.Envelope, 1)
-
-	p.inbox <- Message{
-		MsgID: msgID,
-		Env:   env,
-		Reply: reply,
-	}
 
 	select {
 	case p.inbox <- Message{

@@ -17,6 +17,7 @@ import (
 	"game-server/internal/service"
 	"game-server/internal/service/modules/chat"
 	"game-server/internal/service/modules/login"
+	"game-server/internal/transport"
 	"go.uber.org/zap"
 )
 
@@ -44,6 +45,9 @@ func main() {
 			zap.String("trace_id", ""),
 		)
 		os.Exit(1)
+	}
+	if cfg.MaxEnvelopeSize > 0 {
+		transport.SetMaxEnvelopeSize(cfg.MaxEnvelopeSize)
 	}
 
 	srv := service.NewServer(logger)
