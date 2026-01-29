@@ -222,6 +222,7 @@ class GameClient:
             pass
 
         elif env.msg_id == MSG_LOAD_PLAYER_DATA_RSP:
+            print(f"[Client] MSG_LOAD_PLAYER_DATA_RSP role={env.player_id}")
             rsp = LoadPlayerDataRsp()
             rsp.ParseFromString(env.payload)
             self.load_event.set()

@@ -3,7 +3,7 @@ package login
 import (
 	"context"
 
-	"game-server/internal/player"
+	"game-server/internal/player_db"
 )
 
 type UIDGenerator interface {
@@ -12,10 +12,10 @@ type UIDGenerator interface {
 
 type LoginService struct {
 	uidGen UIDGenerator
-	store  player.Store
+	store  player_db.Store
 }
 
-func NewLoginService(uidGen UIDGenerator, store player.Store) *LoginService {
+func NewLoginService(uidGen UIDGenerator, store player_db.Store) *LoginService {
 	return &LoginService{uidGen: uidGen, store: store}
 }
 
@@ -42,7 +42,7 @@ func (s *LoginService) ResolveRoleID(ctx context.Context, accountID string) (int
 	if err != nil {
 		return 0, false, err
 	}
-	profile := player.NewProfile(roleID, accountID)
+	profile := player_db.NewProfile(roleID, accountID)
 	if err := s.store.SaveRoleID(ctx, accountID, roleID); err != nil {
 		return 0, false, err
 	}

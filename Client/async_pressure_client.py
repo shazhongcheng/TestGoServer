@@ -197,7 +197,7 @@ async def run_pressure_client(
         await asyncio.sleep(interval)
 
     # 模拟在线停留
-    await asyncio.sleep(random.uniform(10, 20))
+    await asyncio.sleep(random.uniform(5, 10))
     await client.close()
     return latencies
 
@@ -209,7 +209,7 @@ async def main():
     host = "127.0.0.1"
     port = 9000
 
-    client_count = 5000
+    client_count = 500
     rounds = 1
 
     tasks = []

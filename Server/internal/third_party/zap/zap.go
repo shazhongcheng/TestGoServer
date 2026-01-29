@@ -92,3 +92,7 @@ func String(key, val string) Field {
 func Err(key string, err error) Field {
 	return Field{Key: key, Value: err}
 }
+
+func Error(err error) Field {
+	return Field{Key: "Error", Value: err}
+}

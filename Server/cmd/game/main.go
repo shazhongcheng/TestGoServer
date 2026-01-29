@@ -12,7 +12,7 @@ import (
 	"game-server/internal/common/logging"
 	"game-server/internal/config"
 	"game-server/internal/game"
-	"game-server/internal/player"
+	"game-server/internal/player_db"
 	"go.uber.org/zap"
 )
 
@@ -56,7 +56,7 @@ func main() {
 		log.Fatalf("init redis failed: %v", err)
 	}
 
-	playerStore := player.NewRedisStore(redis_tools.NewRedisDao())
+	playerStore := player_db.NewRedisStore(redis_tools.NewRedisDao())
 	server := game.NewServer(cfg.ListenAddr, playerStore, logger)
 	logger.Info("game listening",
 		zap.Int("msg_id", 0),

@@ -12,7 +12,7 @@ import (
 
 	"game-server/internal/common/logging"
 	"game-server/internal/config"
-	"game-server/internal/player"
+	"game-server/internal/player_db"
 	"game-server/internal/protocol/internalpb"
 	"game-server/internal/service"
 	"game-server/internal/service/modules/chat"
@@ -59,7 +59,7 @@ func main() {
 		log.Fatalf("init redis failed: %v", err)
 	}
 
-	playerStore := player.NewRedisStore(redis_tools.NewRedisDao())
+	playerStore := player_db.NewRedisStore(redis_tools.NewRedisDao())
 	loginSvc := login.NewLoginService(redis_tools.NewRedisDao(), playerStore)
 
 	if err := srv.RegisterModule(login.NewModule(loginSvc)); err != nil {

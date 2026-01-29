@@ -1,4 +1,4 @@
-package game
+package player_module
 
 type PlayerContext struct {
 	PlayerID  int64
