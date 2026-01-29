@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"runtime"
 	"sync"
 	"sync/atomic"
 
@@ -29,6 +30,9 @@ type NetServer struct {
 
 	routeMu     sync.RWMutex
 	playerRoute map[int64]*GameRouter
+
+	dispatchQueues []chan *internalpb.Envelope
+	dispatchOnce   sync.Once
 }
 
 func NewNetServer(svc *Server, gameRouter *GameRouter, connOptions transport.ConnOptions) *NetServer {
@@ -43,6 +47,7 @@ func NewNetServer(svc *Server, gameRouter *GameRouter, connOptions transport.Con
 }
 
 func (n *NetServer) ListenAndServe(ctx context.Context, addr string) error {
+	n.startDispatchers(ctx)
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
 		return err
@@ -112,7 +117,7 @@ func (n *NetServer) handleGateConn(ctx context.Context, gateID int64, conn *tran
 			n.mu.Unlock()
 		}
 
-		n.dispatchEnvelope(ctx, env)
+		n.enqueueEnvelope(env)
 	}
 }
 
@@ -157,6 +162,41 @@ func (n *NetServer) dispatchEnvelope(ctx context.Context, env *internalpb.Envelo
 	serviceCtx.ReplyError = makeReplyError(serviceCtx)
 
 	n.svc.Handle(serviceCtx)
+}
+
+func (n *NetServer) startDispatchers(ctx context.Context) {
+	n.dispatchOnce.Do(func() {
+		workerCount := 4
+		if cpuCount := runtime.GOMAXPROCS(0); cpuCount > 0 {
+			workerCount = cpuCount * 2
+		}
+		n.dispatchQueues = make([]chan *internalpb.Envelope, workerCount)
+		for i := 0; i < workerCount; i++ {
+			queue := make(chan *internalpb.Envelope, 4096)
+			n.dispatchQueues[i] = queue
+			go func(ch <-chan *internalpb.Envelope) {
+				for {
+					select {
+					case <-ctx.Done():
+						return
+					case env := <-ch:
+						n.dispatchEnvelope(ctx, env)
+					}
+				}
+			}(queue)
+		}
+	})
+}
+
+func (n *NetServer) enqueueEnvelope(env *internalpb.Envelope) {
+	if len(n.dispatchQueues) == 0 {
+		return
+	}
+	index := int(env.SessionId % int64(len(n.dispatchQueues)))
+	if index < 0 {
+		index = -index
+	}
+	n.dispatchQueues[index] <- env
 }
 
 func makeReplyError(ctx *Context) func(protocol.ErrorCode, string) error {
