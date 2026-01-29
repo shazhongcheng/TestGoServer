@@ -9,7 +9,7 @@ import (
 	"game-server/internal/protocol/internalpb"
 )
 
-const defaultBufferSize = 32 * 1024
+const defaultBufferSize = 4 * 1024 * 1024
 
 type BufferedConn struct {
 	conn    net.Conn

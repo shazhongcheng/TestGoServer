@@ -209,7 +209,7 @@ async def main():
     host = "127.0.0.1"
     port = 9000
 
-    client_count = 500
+    client_count = 5000
     rounds = 1
 
     tasks = []

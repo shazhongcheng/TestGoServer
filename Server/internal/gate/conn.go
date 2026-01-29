@@ -39,7 +39,7 @@ func NewConn(nc net.Conn, g *Gate) *Conn {
 		rawConn: nc,
 		bc:      transport.NewBufferedConnWithOptions(nc, g.connOptions),
 
-		sendCh: make(chan *internalpb.Envelope, 1024),
+		sendCh: make(chan *internalpb.Envelope, 8*1024),
 		closed: make(chan struct{}),
 
 		traceID:     g.newTraceID(),

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"sync"
+	"sync/atomic"
 
 	"game-server/internal/protocol"
 	"game-server/internal/protocol/internalpb"
@@ -18,8 +19,12 @@ type NetServer struct {
 	svc        *Server
 	gameRouter *GameRouter
 
-	mu          sync.RWMutex
-	gateConn    *transport.BufferedConn
+	mu         sync.RWMutex
+	gateConns  map[int64]*transport.BufferedConn // gateID -> conn
+	nextGateID int64
+	// session -> gateID
+	sessionGate map[int64]int64
+
 	connOptions transport.ConnOptions
 
 	routeMu     sync.RWMutex
@@ -30,6 +35,8 @@ func NewNetServer(svc *Server, gameRouter *GameRouter, connOptions transport.Con
 	return &NetServer{
 		svc:         svc,
 		gameRouter:  gameRouter,
+		gateConns:   make(map[int64]*transport.BufferedConn),
+		sessionGate: make(map[int64]int64),
 		playerRoute: make(map[int64]*GameRouter),
 		connOptions: connOptions,
 	}
@@ -57,43 +64,54 @@ func (n *NetServer) ListenAndServe(ctx context.Context, addr string) error {
 				continue
 			}
 		}
+
+		gateID := atomic.AddInt64(&n.nextGateID, 1)
+		bc := transport.NewBufferedConnWithOptions(conn, n.connOptions)
+
 		n.mu.Lock()
-		if n.gateConn != nil {
-			n.mu.Unlock()
-			n.svc.logger.Warn("reject gate connection",
-				zap.String("reason", "single_gate_only"),
-				zap.String("addr", conn.RemoteAddr().String()),
-			)
-			_ = conn.Close()
-			continue
-		}
-		n.gateConn = transport.NewBufferedConnWithOptions(conn, n.connOptions)
+		n.gateConns[gateID] = bc
 		n.mu.Unlock()
-		go n.handleGateConn(ctx)
+
+		n.svc.logger.Info("gate connected",
+			zap.Int64("gate_id", gateID),
+			zap.String("addr", conn.RemoteAddr().String()),
+		)
+
+		go n.handleGateConn(ctx, gateID, bc)
 	}
 }
 
-func (n *NetServer) handleGateConn(ctx context.Context) {
-	n.mu.RLock()
-	conn := n.gateConn
-	n.mu.RUnlock()
-	if conn == nil {
-		return
-	}
-	defer conn.Close()
+func (n *NetServer) handleGateConn(ctx context.Context, gateID int64, conn *transport.BufferedConn) {
+	defer func() {
+		_ = conn.Close()
+
+		n.mu.Lock()
+		delete(n.gateConns, gateID)
+		for sid, gid := range n.sessionGate {
+			if gid == gateID {
+				delete(n.sessionGate, sid)
+			}
+		}
+		n.mu.Unlock()
+
+		n.svc.logger.Warn("gate disconnected",
+			zap.Int64("gate_id", gateID),
+		)
+	}()
+
 	for {
 		env, err := conn.ReadEnvelope()
 		if err != nil {
-			n.svc.logger.Warn("gate connection closed",
-				zap.String("reason", err.Error()),
-			)
-			n.mu.Lock()
-			if n.gateConn == conn {
-				n.gateConn = nil
-			}
-			n.mu.Unlock()
 			return
 		}
+
+		// 记录 session -> gate 映射
+		if env.SessionId != 0 {
+			n.mu.Lock()
+			n.sessionGate[env.SessionId] = gateID
+			n.mu.Unlock()
+		}
+
 		n.dispatchEnvelope(ctx, env)
 	}
 }
@@ -154,11 +172,18 @@ func makeReplyError(ctx *Context) func(protocol.ErrorCode, string) error {
 
 func (n *NetServer) replyToGate(sessionID int64, msgID int, data []byte) error {
 	n.mu.RLock()
-	conn := n.gateConn
+	gateID, ok := n.sessionGate[sessionID]
+	if !ok {
+		n.mu.RUnlock()
+		return protocol.InternalErrNoGateConnection
+	}
+	conn := n.gateConns[gateID]
 	n.mu.RUnlock()
+
 	if conn == nil {
 		return protocol.InternalErrNoGateConnection
 	}
+
 	env := &internalpb.Envelope{
 		MsgId:     int32(msgID),
 		SessionId: sessionID,
