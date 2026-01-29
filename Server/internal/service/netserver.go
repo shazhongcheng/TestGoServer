@@ -33,6 +33,8 @@ type NetServer struct {
 
 	dispatchQueues []chan *internalpb.Envelope
 	dispatchOnce   sync.Once
+
+	closing atomic.Bool
 }
 
 func NewNetServer(svc *Server, gameRouter *GameRouter, connOptions transport.ConnOptions) *NetServer {
@@ -47,7 +49,7 @@ func NewNetServer(svc *Server, gameRouter *GameRouter, connOptions transport.Con
 }
 
 func (n *NetServer) ListenAndServe(ctx context.Context, addr string) error {
-	n.startDispatchers(ctx)
+	//n.startDispatchers(ctx)
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
 		return err
@@ -56,6 +58,7 @@ func (n *NetServer) ListenAndServe(ctx context.Context, addr string) error {
 
 	go func() {
 		<-ctx.Done()
+		n.closing.Store(true)
 		_ = ln.Close()
 	}()
 
@@ -117,7 +120,8 @@ func (n *NetServer) handleGateConn(ctx context.Context, gateID int64, conn *tran
 			n.mu.Unlock()
 		}
 
-		n.enqueueEnvelope(env)
+		//n.enqueueEnvelope(env)
+		n.dispatchEnvelope(ctx, env)
 	}
 }
 
@@ -189,14 +193,25 @@ func (n *NetServer) startDispatchers(ctx context.Context) {
 }
 
 func (n *NetServer) enqueueEnvelope(env *internalpb.Envelope) {
-	if len(n.dispatchQueues) == 0 {
+	if n.closing.Load() || len(n.dispatchQueues) == 0 {
 		return
 	}
+
 	index := int(env.SessionId % int64(len(n.dispatchQueues)))
 	if index < 0 {
 		index = -index
 	}
-	n.dispatchQueues[index] <- env
+
+	select {
+	case n.dispatchQueues[index] <- env:
+		// ok
+	default:
+		// queue 满了，直接丢 or 计数
+		n.svc.logger.Warn("dispatch queue full, drop envelope",
+			zap.Int64("session", env.SessionId),
+			zap.Int("msg_id", int(env.MsgId)),
+		)
+	}
 }
 
 func makeReplyError(ctx *Context) func(protocol.ErrorCode, string) error {

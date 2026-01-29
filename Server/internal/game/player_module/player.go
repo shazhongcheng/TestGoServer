@@ -186,18 +186,48 @@ func (p *Player) Dispatch(
 
 // ================= loop =================
 
+//func (p *Player) loop() {
+//	for {
+//		// Destroyed 才真正退出
+//		if p.State() == PlayerStateDestroyed {
+//			return
+//		}
+//
+//		select {
+//		case msg := <-p.inbox:
+//			p.handle(msg)
+//		default:
+//			time.Sleep(5 * time.Millisecond)
+//		}
+//	}
+//}
+
 func (p *Player) loop() {
 	for {
-		// Destroyed 才真正退出
+		// Destroyed：清理并退出
 		if p.State() == PlayerStateDestroyed {
+			p.drainAndFail()
 			return
 		}
 
+		msg := <-p.inbox
+		p.handle(msg)
+	}
+}
+
+func (p *Player) drainAndFail() {
+	for {
 		select {
 		case msg := <-p.inbox:
-			p.handle(msg)
+			if msg.Reply != nil {
+				msg.Reply <- dispatchResult{
+					Envelope: nil,
+					Handled:  false,
+					Err:      ErrPlayerDestroyed,
+				}
+			}
 		default:
-			time.Sleep(5 * time.Millisecond)
+			return
 		}
 	}
 }
