@@ -4,6 +4,7 @@ import (
 	"fmt"
 	stdlog "log"
 	"strings"
+	"time"
 )
 
 type Field struct {
@@ -85,6 +86,10 @@ func Int64(key string, val int64) Field {
 	return Field{Key: key, Value: val}
 }
 
+func Uint64(key string, val uint64) Field {
+	return Field{Key: key, Value: val}
+}
+
 func String(key, val string) Field {
 	return Field{Key: key, Value: val}
 }
@@ -95,6 +100,13 @@ func Err(key string, err error) Field {
 
 func Error(err error) Field {
 	return Field{Key: "Error", Value: err}
+}
+
+func Duration(key string, val time.Duration) Field {
+	return Field{
+		Key:   key,
+		Value: val,
+	}
 }
 
 func Any(key string, val interface{}) Field {

@@ -7,6 +7,15 @@ import (
 	"sync"
 )
 
+type PlayerState int32
+
+const (
+	PlayerStateInit      PlayerState = iota
+	PlayerStateActive                // 正常在线，可收消息
+	PlayerStateOffline               // 离线，不再接收新消息
+	PlayerStateDestroyed             // 已销毁，不可再用
+)
+
 type PlayerManager struct {
 	mu       sync.RWMutex
 	players  map[int64]*Player
@@ -60,12 +69,27 @@ func (m *PlayerManager) MarkOffline(playerID int64) {
 	m.mu.RLock()
 	p := m.players[playerID]
 	m.mu.RUnlock()
+	if p == nil {
+		return
+	}
+
+	_ = m.store.SaveProfile(context.Background(), &p.Profile)
+	p.OnOffline()
+
+	m.mu.Lock()
+	delete(m.sessions, p.SessionID)
+	m.mu.Unlock()
+}
+
+// 真正销毁（例如超时、踢人、关服）
+func (m *PlayerManager) DestroyPlayer(playerID int64) {
+	m.mu.Lock()
+	p := m.players[playerID]
+	delete(m.players, playerID)
+	m.mu.Unlock()
+
 	if p != nil {
-		_ = m.store.SaveProfile(context.Background(), &p.Profile)
-		p.OnOffline()
-		m.mu.Lock()
-		delete(m.sessions, p.SessionID)
-		m.mu.Unlock()
+		p.Destroy()
 	}
 }
 

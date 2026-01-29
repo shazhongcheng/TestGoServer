@@ -188,7 +188,7 @@ async def run_pressure_client(
 
         await client.load_player_data()
         try:
-            await asyncio.wait_for(client.load_event.wait(), timeout=30.0)
+            await asyncio.wait_for(client.load_event.wait(), timeout=300.0)
         except asyncio.TimeoutError:
             print("======111111=========")
             break

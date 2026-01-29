@@ -81,6 +81,7 @@ func (s *Server) handleConn(ctx context.Context, conn net.Conn) {
 			return
 		}
 
+		// ---------- resolve playerID ----------
 		playerID := env.PlayerId
 		if playerID == 0 && env.SessionId != 0 {
 			if p := s.players.GetBySessionID(env.SessionId); p != nil {
@@ -88,6 +89,7 @@ func (s *Server) handleConn(ctx context.Context, conn net.Conn) {
 			}
 		}
 
+		// ---------- offline notify ----------
 		if env.MsgId == protocol.MsgPlayerOfflineNotify {
 			if playerID != 0 {
 				s.players.MarkOffline(playerID)
@@ -95,6 +97,33 @@ func (s *Server) handleConn(ctx context.Context, conn net.Conn) {
 			continue
 		}
 
+		// ---------- resume req (显式协议) ----------
+		if env.MsgId == protocol.MsgPlayerResumeReq {
+			if playerID == 0 {
+				s.logger.Warn("resume without playerID",
+					zap.Int64("session", env.SessionId),
+				)
+				continue
+			}
+
+			player, err := s.players.GetOrCreate(ctx, env.SessionId, playerID)
+			if err != nil {
+				s.logger.Warn("resume get player failed", zap.Error(err))
+				continue
+			}
+
+			_, err = player.Dispatch(int(env.MsgId), env)
+			if err != nil {
+				s.logger.Warn("player resume dispatch failed",
+					zap.Error(err),
+					zap.Int64("session", env.SessionId),
+					zap.Int64("player", playerID),
+				)
+			}
+			continue
+		}
+
+		// ---------- normal player message ----------
 		player, err := s.players.GetOrCreate(ctx, env.SessionId, playerID)
 		if err != nil {
 			s.logger.Warn("get player failed", zap.Error(err))
@@ -121,10 +150,15 @@ func (s *Server) handleConn(ctx context.Context, conn net.Conn) {
 					zap.String("trace_id", fmt.Sprintf("session-%d", env.SessionId)),
 				)
 			} else {
-				s.logger.Warn("dispatch failed", zap.Error(err))
+				s.logger.Warn("dispatch failed",
+					zap.Error(err),
+					zap.Int64("session", env.SessionId),
+					zap.Int64("player", playerID),
+				)
 			}
 			continue
 		}
+
 		if rsp != nil {
 			_ = bc.WriteEnvelope(rsp)
 		}
