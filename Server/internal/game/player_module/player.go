@@ -4,6 +4,8 @@ package player_module
 import (
 	"errors"
 	"fmt"
+	"time"
+
 	//"game-server/internal/game"
 	"game-server/internal/player_db"
 	"game-server/internal/protocol/internalpb"
@@ -11,6 +13,7 @@ import (
 )
 
 var ErrPlayerClosed = errors.New("player closed")
+var ErrPlayerBusy = errors.New("player inbox busy")
 
 type Message struct {
 	MsgID int
@@ -110,7 +113,7 @@ func (p *Player) Dispatch(
 ) (*internalpb.Envelope, error) {
 
 	if atomic.LoadInt32(&p.closed) == 1 {
-		return nil, nil
+		return nil, ErrPlayerClosed
 	}
 
 	reply := make(chan *internalpb.Envelope, 1)
@@ -121,10 +124,35 @@ func (p *Player) Dispatch(
 		Env:   env,
 		Reply: reply,
 	}:
-		return <-reply, nil
+		timer := time.NewTimer(5 * time.Second)
+		defer timer.Stop()
+
+		select {
+		case rsp := <-reply:
+			return rsp, nil
+		case <-timer.C:
+			return nil, errors.New("player reply timeout")
+		}
 	default:
 		// inbox full = backpressure
-		return nil, ErrPlayerClosed
+		return nil, ErrPlayerBusy
+	}
+}
+
+func (p *Player) Notify(msgID int, env *internalpb.Envelope) error {
+	if atomic.LoadInt32(&p.closed) == 1 {
+		return ErrPlayerClosed
+	}
+
+	select {
+	case p.inbox <- Message{
+		MsgID: msgID,
+		Env:   env,
+		Reply: nil, // 关键：没有 reply
+	}:
+		return nil
+	default:
+		return ErrPlayerBusy
 	}
 }
 
