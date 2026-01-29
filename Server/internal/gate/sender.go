@@ -11,11 +11,21 @@ func (g *Gate) sendToService(module string, env *internalpb.Envelope) {
 		g.logger.Warn("service not initialized")
 		return
 	}
+	traceID := ""
 	if s := g.sessions.Get(env.GetSessionId()); s != nil {
 		env.PlayerId = s.PlayerID
+		if s.Conn != nil {
+			traceID = s.Conn.TraceID()
+		}
 	}
 	if err := g.servicePool.Send(env.GetSessionId(), env); err != nil {
-		g.logger.Warn("send to service failed: %v", zap.Err("err", err))
+		g.logger.Warn("send to service failed",
+			zap.String("reason", err.Error()),
+			zap.Int("msg_id", int(env.MsgId)),
+			zap.Int64("session", env.SessionId),
+			zap.Int64("player", env.PlayerId),
+			zap.String("trace_id", traceID),
+		)
 	}
 }
 

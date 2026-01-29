@@ -2,6 +2,7 @@
 package gate
 
 import (
+	"sync/atomic"
 	"time"
 
 	"game-server/internal/protocol"
@@ -23,6 +24,7 @@ func (g *Gate) checkAuthingTimeout() {
 			)
 			fields = append(fields, connFields(s.Conn)...)
 			g.logger.Warn("login timeout", fields...)
+			atomic.AddUint64(&g.loginTimeoutCount, 1)
 			g.onSessionOffline(s, "login timeout")
 		}
 	}

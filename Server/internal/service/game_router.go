@@ -9,6 +9,7 @@ import (
 	"game-server/internal/protocol"
 	"game-server/internal/protocol/internalpb"
 	"game-server/internal/transport"
+	"go.uber.org/zap"
 )
 
 type GameRouter struct {
@@ -19,10 +20,26 @@ type GameRouter struct {
 
 	sendCh chan *internalpb.Envelope
 	closed chan struct{}
+
+	logger         *zap.Logger
+	connOptions    transport.ConnOptions
+	sendRetryMax   int
+	sendRetryDelay time.Duration
+	busyCount      uint64
+	dropCount      uint64
 }
 
-func NewGameRouter(addr string) *GameRouter {
-	return &GameRouter{addr: addr}
+func NewGameRouter(addr string, logger *zap.Logger, options transport.ConnOptions, retryMax int, retryDelay time.Duration) *GameRouter {
+	if logger == nil {
+		logger = zap.NewNop()
+	}
+	return &GameRouter{
+		addr:           addr,
+		logger:         logger,
+		connOptions:    options,
+		sendRetryMax:   retryMax,
+		sendRetryDelay: retryDelay,
+	}
 }
 
 func (r *GameRouter) Start(ctx context.Context, onEnvelope func(env *internalpb.Envelope)) {
@@ -34,12 +51,26 @@ func (r *GameRouter) Start(ctx context.Context, onEnvelope func(env *internalpb.
 }
 
 func (r *GameRouter) Send(env *internalpb.Envelope) error {
-	select {
-	case r.sendCh <- env:
-		return nil
-	default:
-		return protocol.InternalErrGameRouterBusy
+	for attempt := 0; attempt <= r.sendRetryMax; attempt++ {
+		select {
+		case r.sendCh <- env:
+			return nil
+		default:
+			if attempt == r.sendRetryMax {
+				r.busyCount++
+				r.logger.Warn("game router send queue full",
+					zap.String("addr", r.addr),
+					zap.Int("msg_id", int(env.MsgId)),
+					zap.Int64("session", env.SessionId),
+					zap.Int64("player", env.PlayerId),
+					zap.String("reason", "send_queue_full"),
+				)
+				return protocol.InternalErrGameRouterBusy
+			}
+			time.Sleep(r.sendRetryDelay)
+		}
 	}
+	return protocol.InternalErrGameRouterBusy
 }
 
 func (r *GameRouter) writeLoop() {
@@ -51,6 +82,14 @@ func (r *GameRouter) writeLoop() {
 			r.mu.RUnlock()
 
 			if conn == nil {
+				r.dropCount++
+				r.logger.Warn("game router disconnected, drop message",
+					zap.String("addr", r.addr),
+					zap.Int("msg_id", int(env.MsgId)),
+					zap.Int64("session", env.SessionId),
+					zap.Int64("player", env.PlayerId),
+					zap.String("reason", "router_disconnected"),
+				)
 				continue
 			}
 
@@ -74,7 +113,8 @@ func (r *GameRouter) connectLoop(ctx context.Context, onEnvelope func(env *inter
 		default:
 		}
 
-		conn, err := net.Dial("tcp", r.addr)
+		dialer := net.Dialer{Timeout: 3 * time.Second, KeepAlive: r.connOptions.KeepAlive}
+		conn, err := dialer.Dial("tcp", r.addr)
 		if err != nil {
 			time.Sleep(backoff)
 			if backoff < 5*time.Second {
@@ -84,7 +124,7 @@ func (r *GameRouter) connectLoop(ctx context.Context, onEnvelope func(env *inter
 		}
 
 		r.mu.Lock()
-		r.conn = transport.NewBufferedConn(conn)
+		r.conn = transport.NewBufferedConnWithOptions(conn, r.connOptions)
 		r.mu.Unlock()
 		backoff = time.Second
 

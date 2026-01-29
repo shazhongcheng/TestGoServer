@@ -4,11 +4,13 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"game-server/internal/db/redis_tools"
 	"log"
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"game-server/internal/common/logging"
 	"game-server/internal/config"
@@ -48,6 +50,11 @@ func main() {
 	}
 	if cfg.MaxEnvelopeSize > 0 {
 		transport.SetMaxEnvelopeSize(cfg.MaxEnvelopeSize)
+	}
+	connOptions := transport.ConnOptions{
+		ReadTimeout:  time.Duration(cfg.ConnReadTimeoutSec) * time.Second,
+		WriteTimeout: time.Duration(cfg.ConnWriteTimeoutSec) * time.Second,
+		KeepAlive:    time.Duration(cfg.ConnKeepAliveSec) * time.Second,
 	}
 
 	srv := service.NewServer(logger)
@@ -92,8 +99,10 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	gameRouter := service.NewGameRouter(cfg.GameAddr)
-	netServer := service.NewNetServer(srv, gameRouter)
+	redis_tools.StartHealthCheck(ctx, logger, time.Duration(cfg.Redis.HealthCheckSec)*time.Second)
+
+	gameRouter := service.NewGameRouter(cfg.GameAddr, logger, connOptions, 2, 5*time.Millisecond)
+	netServer := service.NewNetServer(srv, gameRouter, connOptions)
 	gameRouter.Start(ctx, func(env *internalpb.Envelope) {
 		if err := netServer.ForwardToGate(env); err != nil {
 			logger.Warn("forward game env failed",
@@ -102,7 +111,7 @@ func main() {
 				zap.Int64("player", env.PlayerId),
 				zap.String("reason", err.Error()),
 				zap.Int64("conn_id", 0),
-				zap.String("trace_id", ""),
+				zap.String("trace_id", fmt.Sprintf("session-%d", env.SessionId)),
 			)
 		}
 	})

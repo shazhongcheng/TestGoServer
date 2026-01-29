@@ -3,12 +3,15 @@ package gate
 
 import (
 	"errors"
+	"net"
+	"sync"
+	"sync/atomic"
+	"time"
+
 	"game-server/internal/protocol"
 	"game-server/internal/protocol/internalpb"
 	"game-server/internal/transport"
-	"net"
-	"sync"
-	"time"
+	"go.uber.org/zap"
 )
 
 type Conn struct {
@@ -25,18 +28,22 @@ type Conn struct {
 	once   sync.Once
 
 	id int64
+
+	connectedAt time.Time
+	busyCount   uint32
 }
 
 func NewConn(nc net.Conn, g *Gate) *Conn {
 	c := &Conn{
 		gate:    g,
 		rawConn: nc,
-		bc:      transport.NewBufferedConn(nc),
+		bc:      transport.NewBufferedConnWithOptions(nc, g.connOptions),
 
 		sendCh: make(chan *internalpb.Envelope, 1024),
 		closed: make(chan struct{}),
 
-		traceID: g.newTraceID(),
+		traceID:     g.newTraceID(),
+		connectedAt: time.Now(),
 	}
 
 	go c.writeLoop()
@@ -72,6 +79,15 @@ func (c *Conn) Send(env *internalpb.Envelope) error {
 	case c.sendCh <- env:
 		return nil
 	default:
+		atomic.AddUint64(&c.gate.connBusyCount, 1)
+		if atomic.AddUint32(&c.busyCount, 1) >= 5 {
+			c.gate.logger.Warn("conn send buffer full, closing",
+				zap.String("reason", "conn_busy"),
+				zap.String("trace_id", c.traceID),
+				zap.Int64("session", c.sessionID),
+			)
+			c.Close()
+		}
 		return ErrConnBusy
 	}
 }
@@ -117,6 +133,13 @@ func (g *Gate) onConnClose(c *Conn) {
 	s.LastSeen = time.Now()
 
 	g.notifyPlayerOffline(s)
+	g.logger.Info("client connection closed",
+		zap.String("reason", "read_error"),
+		zap.Int64("session", s.ID),
+		zap.Int64("player", s.PlayerID),
+		zap.Duration("online_duration", time.Since(c.connectedAt)),
+		zap.String("trace_id", c.traceID),
+	)
 }
 
 func (g *Gate) onResume(c *Conn, req *ResumeReq) error {

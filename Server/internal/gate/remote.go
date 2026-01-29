@@ -23,13 +23,20 @@ type remoteClient struct {
 
 	// ⭐ 发送队列（核心）
 	sendCh chan *internalpb.Envelope
+
+	connOptions      transport.ConnOptions
+	sendRetryMax     int
+	sendRetryBackoff time.Duration
+	busyCount        uint64
+	dropCount        uint64
+	lastConnectedAt  time.Time
 }
 
 type remoteClientPool struct {
 	clients []*remoteClient
 }
 
-func newRemoteClient(name, addr string, logger *zap.Logger, onEnvelope func(env *internalpb.Envelope)) *remoteClient {
+func newRemoteClient(name, addr string, logger *zap.Logger, onEnvelope func(env *internalpb.Envelope), options transport.ConnOptions, retryMax int, retryBackoff time.Duration) *remoteClient {
 	return &remoteClient{
 		name:       name,
 		addr:       addr,
@@ -37,17 +44,20 @@ func newRemoteClient(name, addr string, logger *zap.Logger, onEnvelope func(env 
 		onEnvelope: onEnvelope,
 
 		// 队列大小可以根据压测调整
-		sendCh: make(chan *internalpb.Envelope, 8192),
+		sendCh:           make(chan *internalpb.Envelope, 8192),
+		connOptions:      options,
+		sendRetryMax:     retryMax,
+		sendRetryBackoff: retryBackoff,
 	}
 }
 
-func newRemoteClientPool(name, addr string, logger *zap.Logger, onEnvelope func(env *internalpb.Envelope), size int) *remoteClientPool {
+func newRemoteClientPool(name, addr string, logger *zap.Logger, onEnvelope func(env *internalpb.Envelope), size int, options transport.ConnOptions, retryMax int, retryBackoff time.Duration) *remoteClientPool {
 	if size < 1 {
 		size = 1
 	}
 	clients := make([]*remoteClient, 0, size)
 	for i := 0; i < size; i++ {
-		clients = append(clients, newRemoteClient(name, addr, logger, onEnvelope))
+		clients = append(clients, newRemoteClient(name, addr, logger, onEnvelope, options, retryMax, retryBackoff))
 	}
 	return &remoteClientPool{clients: clients}
 }
@@ -75,13 +85,27 @@ func (c *remoteClient) Start(ctx context.Context) {
 }
 
 func (c *remoteClient) Send(env *internalpb.Envelope) error {
-	select {
-	case c.sendCh <- env:
-		return nil
-	default:
-		// 队列满 = 下游严重拥堵
-		return protocol.InternalErrRemoteBusy
+	for attempt := 0; attempt <= c.sendRetryMax; attempt++ {
+		select {
+		case c.sendCh <- env:
+			return nil
+		default:
+			if attempt == c.sendRetryMax {
+				c.busyCount++
+				c.logger.Warn("remote send queue full",
+					zap.String("remote", c.name),
+					zap.String("addr", c.addr),
+					zap.Int("msg_id", int(env.MsgId)),
+					zap.Int64("session", env.SessionId),
+					zap.Int64("player", env.PlayerId),
+					zap.String("reason", "send_queue_full"),
+				)
+				return protocol.InternalErrRemoteBusy
+			}
+			time.Sleep(c.sendRetryBackoff)
+		}
 	}
+	return protocol.InternalErrRemoteBusy
 }
 
 // ========================
@@ -100,6 +124,15 @@ func (c *remoteClient) writeLoop(ctx context.Context) {
 
 			if conn == nil {
 				// 远端未连接，直接丢弃 or 记录
+				c.dropCount++
+				c.logger.Warn("remote disconnected, drop message",
+					zap.String("remote", c.name),
+					zap.String("addr", c.addr),
+					zap.Int("msg_id", int(env.MsgId)),
+					zap.Int64("session", env.SessionId),
+					zap.Int64("player", env.PlayerId),
+					zap.String("reason", "remote_disconnected"),
+				)
 				continue
 			}
 
@@ -123,7 +156,8 @@ func (c *remoteClient) connectLoop(ctx context.Context) {
 		default:
 		}
 
-		conn, err := net.Dial("tcp", c.addr)
+		dialer := net.Dialer{Timeout: 3 * time.Second, KeepAlive: c.connOptions.KeepAlive}
+		conn, err := dialer.Dial("tcp", c.addr)
 		if err != nil {
 			c.logger.Warn("remote dial failed",
 				zap.String("reason", err.Error()),
@@ -143,8 +177,9 @@ func (c *remoteClient) connectLoop(ctx context.Context) {
 		}
 
 		c.mu.Lock()
-		c.conn = transport.NewBufferedConn(conn)
+		c.conn = transport.NewBufferedConnWithOptions(conn, c.connOptions)
 		c.mu.Unlock()
+		c.lastConnectedAt = time.Now()
 		c.logger.Info("remote connected",
 			zap.String("addr", c.addr),
 			zap.String("remote", c.name),
@@ -173,6 +208,7 @@ func (c *remoteClient) connectLoop(ctx context.Context) {
 		c.mu.Unlock()
 		c.logger.Warn("remote disconnected",
 			zap.String("remote", c.name),
+			zap.Duration("connected_duration", time.Since(c.lastConnectedAt)),
 			zap.Int64("session", 0),
 			zap.Int64("player", 0),
 			zap.Int("msg_id", 0),

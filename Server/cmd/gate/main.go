@@ -56,10 +56,20 @@ func main() {
 
 	// ========== Gate ==========
 	g := gate.NewGate(logger)
+	connOptions := transport.ConnOptions{
+		ReadTimeout:  time.Duration(cfg.ConnReadTimeoutSec) * time.Second,
+		WriteTimeout: time.Duration(cfg.ConnWriteTimeoutSec) * time.Second,
+		KeepAlive:    time.Duration(cfg.ConnKeepAliveSec) * time.Second,
+	}
 	g.UpdateConfig(
 		time.Duration(cfg.HeartbeatIntervalSec)*time.Second,
 		time.Duration(cfg.HeartbeatTimeoutSec)*time.Second,
 		time.Duration(cfg.GCIntervalSec)*time.Second,
+		time.Duration(cfg.LoginTimeoutSec)*time.Second,
+		cfg.LoginRateLimitCount,
+		time.Duration(cfg.LoginRateLimitWindow)*time.Second,
+		cfg.UnknownMsgKickCount,
+		connOptions,
 	)
 	g.Start(ctx)
 	g.ConnectService(ctx, cfg.ServiceAddr, cfg.ServicePoolSize)

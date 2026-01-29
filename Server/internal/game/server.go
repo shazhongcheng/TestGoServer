@@ -2,10 +2,14 @@ package game
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"game-server/internal/game/player_module"
 	"game-server/internal/player_db"
 	"net"
+	"time"
 
+	"game-server/internal/protocol"
 	"game-server/internal/transport"
 	"go.uber.org/zap"
 
@@ -13,21 +17,27 @@ import (
 )
 
 type Server struct {
-	addr    string
-	players *player_module.PlayerManager
-	logger  *zap.Logger
+	addr            string
+	players         *player_module.PlayerManager
+	logger          *zap.Logger
+	connOptions     transport.ConnOptions
+	persistInterval time.Duration
 }
 
 func NewServer(addr string,
 	store player_db.Store,
-	logger *zap.Logger) *Server {
+	logger *zap.Logger,
+	options transport.ConnOptions,
+	persistInterval time.Duration) *Server {
 	if logger == nil {
 		logger = zap.NewNop()
 	}
 	return &Server{
-		addr:    addr,
-		players: player_module.NewPlayerManager(store),
-		logger:  logger,
+		addr:            addr,
+		players:         player_module.NewPlayerManager(store),
+		logger:          logger,
+		connOptions:     options,
+		persistInterval: persistInterval,
 	}
 }
 
@@ -42,6 +52,10 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 		<-ctx.Done()
 		_ = ln.Close()
 	}()
+
+	if s.persistInterval > 0 {
+		go s.persistLoop(ctx)
+	}
 
 	for {
 		conn, err := ln.Accept()
@@ -58,7 +72,7 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 }
 
 func (s *Server) handleConn(ctx context.Context, conn net.Conn) {
-	bc := transport.NewBufferedConn(conn)
+	bc := transport.NewBufferedConnWithOptions(conn, s.connOptions)
 	defer bc.Close()
 
 	for {
@@ -67,7 +81,21 @@ func (s *Server) handleConn(ctx context.Context, conn net.Conn) {
 			return
 		}
 
-		player, err := s.players.GetOrCreate(ctx, env.SessionId, env.PlayerId)
+		playerID := env.PlayerId
+		if playerID == 0 && env.SessionId != 0 {
+			if p := s.players.GetBySessionID(env.SessionId); p != nil {
+				playerID = p.PlayerID
+			}
+		}
+
+		if env.MsgId == protocol.MsgPlayerOfflineNotify {
+			if playerID != 0 {
+				s.players.MarkOffline(playerID)
+			}
+			continue
+		}
+
+		player, err := s.players.GetOrCreate(ctx, env.SessionId, playerID)
 		if err != nil {
 			s.logger.Warn("get player failed", zap.Error(err))
 			continue
@@ -76,19 +104,42 @@ func (s *Server) handleConn(ctx context.Context, conn net.Conn) {
 		s.logger.Debug("game envelope received",
 			zap.Int("msg_id", int(env.MsgId)),
 			zap.Int64("session", env.SessionId),
-			zap.Int64("player", env.PlayerId),
+			zap.Int64("player", playerID),
 			zap.String("reason", ""),
 			zap.Int64("conn_id", 0),
-			zap.String("trace_id", ""),
+			zap.String("trace_id", fmt.Sprintf("session-%d", env.SessionId)),
 		)
 
 		rsp, err := player.Dispatch(int(env.MsgId), env)
 		if err != nil {
-			s.logger.Warn("dispatch failed", zap.Error(err))
+			if errors.Is(err, player_module.ErrUnknownMessage) {
+				s.logger.Warn("unknown player message",
+					zap.Int("msg_id", int(env.MsgId)),
+					zap.Int64("session", env.SessionId),
+					zap.Int64("player", playerID),
+					zap.String("reason", "unknown_msg"),
+					zap.String("trace_id", fmt.Sprintf("session-%d", env.SessionId)),
+				)
+			} else {
+				s.logger.Warn("dispatch failed", zap.Error(err))
+			}
 			continue
 		}
 		if rsp != nil {
 			_ = bc.WriteEnvelope(rsp)
+		}
+	}
+}
+
+func (s *Server) persistLoop(ctx context.Context) {
+	ticker := time.NewTicker(s.persistInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			s.players.SaveAll(ctx)
 		}
 	}
 }

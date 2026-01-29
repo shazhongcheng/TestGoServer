@@ -31,6 +31,9 @@ type Session struct {
 
 	// ⭐ 登录相关
 	AuthStart time.Time
+	LoginWindowStart time.Time
+	LoginAttempts    int
+	UnknownMsgCount  int
 }
 
 func (g *Gate) newSession() *Session {

@@ -2,6 +2,7 @@
 package gate
 
 import (
+	"sync/atomic"
 	"time"
 
 	"game-server/internal/protocol"
@@ -39,6 +40,19 @@ func (g *Gate) OnEnvelope(c *Conn, env *internalpb.Envelope) {
 
 		// ⭐ 只有这里才创建 Session
 		s := g.createSessionForConn(c)
+
+		if !g.allowLogin(s) {
+			atomic.AddUint64(&g.loginRateLimitCounted, 1)
+			g.logger.Warn("login rate limited",
+				zap.String("reason", "login_rate_limited"),
+				zap.Int("msg_id", msgID),
+				zap.Int64("session", s.ID),
+				zap.Int64("player", s.PlayerID),
+				zap.Int64("sesson_id", c.sessionID),
+				zap.String("trace_id", c.traceID),
+			)
+			return
+		}
 
 		// 继续走 Login 流程
 		g.sendToService("login", &internalpb.Envelope{
@@ -78,6 +92,18 @@ func (g *Gate) OnEnvelope(c *Conn, env *internalpb.Envelope) {
 	// 2️⃣ Login 流程
 	// =========================
 	if msgID == protocol.MsgLoginReq {
+		if !g.allowLogin(s) {
+			atomic.AddUint64(&g.loginRateLimitCounted, 1)
+			g.logger.Warn("login rate limited",
+				zap.String("reason", "login_rate_limited"),
+				zap.Int("msg_id", msgID),
+				zap.Int64("session", s.ID),
+				zap.Int64("player", s.PlayerID),
+				zap.Int64("sesson_id", c.sessionID),
+				zap.String("trace_id", c.traceID),
+			)
+			return
+		}
 		switch s.State {
 
 		case SessionAuthenticated:
@@ -132,6 +158,8 @@ func (g *Gate) OnEnvelope(c *Conn, env *internalpb.Envelope) {
 	// =========================
 	rule, ok := router.GetRoute(msgID)
 	if !ok {
+		s.UnknownMsgCount++
+		atomic.AddUint64(&g.unknownMsgCount, 1)
 		g.logger.Warn("unknown msgID",
 			zap.Int("msg_id", msgID),
 			zap.Int64("session", s.ID),
@@ -140,6 +168,9 @@ func (g *Gate) OnEnvelope(c *Conn, env *internalpb.Envelope) {
 			zap.Int64("sesson_id", c.sessionID),
 			zap.String("trace_id", c.traceID),
 		)
+		if g.unknownMsgKickCount > 0 && s.UnknownMsgCount >= g.unknownMsgKickCount {
+			g.onSessionOffline(s, "unknown msg limit")
+		}
 		return
 	}
 

@@ -2,6 +2,7 @@ package gate
 
 import (
 	"context"
+	"sync/atomic"
 	"time"
 
 	"game-server/internal/protocol"
@@ -63,6 +64,7 @@ func (g *Gate) checkHeartbeat() {
 			)
 			fields = append(fields, connFields(s.Conn)...)
 			g.logger.Warn("heartbeat timeout", fields...)
+			atomic.AddUint64(&g.heartbeatTimeoutCount, 1)
 			g.onSessionOffline(s, "heartbeat timeout")
 		}
 	}

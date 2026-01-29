@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"game-server/internal/common/logging"
 	"game-server/internal/config"
@@ -45,6 +46,11 @@ func main() {
 	if cfg.MaxEnvelopeSize > 0 {
 		transport.SetMaxEnvelopeSize(cfg.MaxEnvelopeSize)
 	}
+	connOptions := transport.ConnOptions{
+		ReadTimeout:  time.Duration(cfg.ConnReadTimeoutSec) * time.Second,
+		WriteTimeout: time.Duration(cfg.ConnWriteTimeoutSec) * time.Second,
+		KeepAlive:    time.Duration(cfg.ConnKeepAliveSec) * time.Second,
+	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
@@ -59,9 +65,10 @@ func main() {
 	}); err != nil {
 		log.Fatalf("init redis failed: %v", err)
 	}
+	redis_tools.StartHealthCheck(ctx, logger, time.Duration(cfg.Redis.HealthCheckSec)*time.Second)
 
 	playerStore := player_db.NewRedisStore(redis_tools.NewRedisDao())
-	server := game.NewServer(cfg.ListenAddr, playerStore, logger)
+	server := game.NewServer(cfg.ListenAddr, playerStore, logger, connOptions, 30*time.Second)
 	logger.Info("game listening",
 		zap.Int("msg_id", 0),
 		zap.Int64("session", 0),
