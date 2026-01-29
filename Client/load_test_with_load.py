@@ -10,8 +10,8 @@ from client_base import (
     MSG_LOGIN_RSP,
 )
 
-def run_pressure_client(server_addr, idx, rounds=20, interval=0.1):
-    client = GameClient(server_addr)
+def run_pressure_client(server_addr, idx, mode, ws_path, ws_use_json, rounds=20, interval=0.1):
+    client = GameClient(server_addr, mode=mode, ws_path=ws_path, ws_use_json=ws_use_json)
     client.connect()
 
     account = f"test{idx}"
@@ -42,7 +42,15 @@ def run_pressure_client(server_addr, idx, rounds=20, interval=0.1):
     return latencies
 
 def main():
-    server_addr = ("127.0.0.1", 9000)
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--host", default="127.0.0.1")
+    parser.add_argument("--port", type=int, default=9000)
+    parser.add_argument("--mode", choices=["tcp", "ws"], default="tcp")
+    parser.add_argument("--ws-path", default="/ws")
+    parser.add_argument("--ws-use-json", action="store_true")
+    args = parser.parse_args()
+
+    server_addr = (args.host, args.port)
 
     threads = []
     all_latencies = []
@@ -52,6 +60,9 @@ def main():
         lats = run_pressure_client(
             server_addr,
             idx,
+            args.mode,
+            args.ws_path,
+            args.ws_use_json,
             rounds=1,
             interval=0.1,
         )

@@ -1,5 +1,10 @@
 {
   "listen_addr": ":9000",
+  "enable_tcp": true,
+  "enable_websocket": false,
+  "websocket_listen_addr": ":9001",
+  "websocket_path": "/ws",
+  "websocket_use_json": false,
   "service_addr": "127.0.0.1:9100",
   "game_addr": "127.0.0.1:9200",
   "service_pool_size": 4,

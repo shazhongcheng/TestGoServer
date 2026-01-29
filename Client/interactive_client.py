@@ -1,13 +1,21 @@
+import argparse
 import sys
 import time
 
 from client_base import GameClient
 
-SERVER_ADDR = ("127.0.0.1", 9000)
-
 
 def main():
-    client = GameClient(SERVER_ADDR)
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--host", default="127.0.0.1")
+    parser.add_argument("--port", type=int, default=9000)
+    parser.add_argument("--mode", choices=["tcp", "ws"], default="tcp")
+    parser.add_argument("--ws-path", default="/ws")
+    parser.add_argument("--ws-use-json", action="store_true")
+    args = parser.parse_args()
+
+    server_addr = (args.host, args.port)
+    client = GameClient(server_addr, mode=args.mode, ws_path=args.ws_path, ws_use_json=args.ws_use_json)
     client.connect()
     client.login(account_id="test1", token="test1")
 
