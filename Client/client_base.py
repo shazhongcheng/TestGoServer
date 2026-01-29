@@ -2,7 +2,9 @@ import socket
 import struct
 import threading
 import time
+import websocket
 
+from google.protobuf import json_format
 from internal_pb.internal_pb2 import Envelope
 from internal_pb.gate_pb2 import ResumeReq, SessionInit
 from internal_pb.login_pb2 import LoginReq, LoginRsp
@@ -26,10 +28,14 @@ MSG_PLAYER_OFFLINE_NOTIFY = 3006
 # Client
 # =====================
 class GameClient:
-    def __init__(self, server_addr):
+    def __init__(self, server_addr, mode="tcp", ws_path="/ws", ws_use_json=False):
         self.server_addr = server_addr
+        self.mode = mode
+        self.ws_path = ws_path
+        self.ws_use_json = ws_use_json
 
         self.sock = None
+        self.ws = None
         self.running = False
 
         self.session_id = 0
@@ -51,8 +57,11 @@ class GameClient:
     # Network
     # -----------------
     def connect(self):
-        self.sock = socket.socket()
-        self.sock.connect(self.server_addr)
+        if self.mode == "tcp":
+            self.sock = socket.socket()
+            self.sock.connect(self.server_addr)
+        else:
+            self.ws = websocket.create_connection(self._ws_url())
         self.running = True
 
         self.recv_thread = threading.Thread(
@@ -78,6 +87,12 @@ class GameClient:
             except OSError:
                 pass
             self.sock = None
+        if self.ws:
+            try:
+                self.ws.close()
+            except OSError:
+                pass
+            self.ws = None
 
         print("[Client] disconnected")
 
@@ -95,9 +110,17 @@ class GameClient:
                 player_id=self.player_id,
                 payload=payload,
             )
-            data = env.SerializeToString()
-            pkt = struct.pack(">I", len(data)) + data
-            self.sock.sendall(pkt)
+            if self.mode == "tcp":
+                data = env.SerializeToString()
+                pkt = struct.pack(">I", len(data)) + data
+                self.sock.sendall(pkt)
+            else:
+                if self.ws_use_json:
+                    data = json_format.MessageToJson(env)
+                    self.ws.send(data)
+                else:
+                    data = env.SerializeToString()
+                    self.ws.send(data, opcode=websocket.ABNF.OPCODE_BINARY)
 
     # -----------------
     # API
@@ -160,6 +183,12 @@ class GameClient:
     # Recv
     # -----------------
     def recv_loop(self):
+        if self.mode == "tcp":
+            self._recv_loop_tcp()
+        else:
+            self._recv_loop_ws()
+
+    def _recv_loop_tcp(self):
         try:
             while self.running:
                 header = self._recv_exact(4)
@@ -181,6 +210,23 @@ class GameClient:
         finally:
             self.close()
 
+    def _recv_loop_ws(self):
+        try:
+            while self.running:
+                data = self.ws.recv()
+                if not data:
+                    break
+                env = Envelope()
+                if self.ws_use_json:
+                    json_format.Parse(data, env)
+                else:
+                    env.ParseFromString(data)
+                self.on_message(env)
+        except OSError:
+            pass
+        finally:
+            self.close()
+
     def _recv_exact(self, n):
         data = b""
         while len(data) < n and self.running:
@@ -189,6 +235,14 @@ class GameClient:
                 return None
             data += chunk
         return data
+
+    def _ws_url(self):
+        if isinstance(self.server_addr, str):
+            if self.server_addr.startswith("ws://") or self.server_addr.startswith("wss://"):
+                return self.server_addr
+            return f"ws://{self.server_addr}{self.ws_path}"
+        host, port = self.server_addr
+        return f"ws://{host}:{port}{self.ws_path}"
 
     # -----------------
     # Message

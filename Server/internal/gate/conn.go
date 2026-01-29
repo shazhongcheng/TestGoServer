@@ -11,14 +11,14 @@ import (
 	"game-server/internal/protocol"
 	"game-server/internal/protocol/internalpb"
 	"game-server/internal/transport"
+	"github.com/gorilla/websocket"
 	"go.uber.org/zap"
 )
 
 type Conn struct {
 	gate *Gate
 
-	rawConn net.Conn
-	bc      *transport.BufferedConn
+	conn transport.Conn
 
 	sessionID int64
 	traceID   string
@@ -34,10 +34,17 @@ type Conn struct {
 }
 
 func NewConn(nc net.Conn, g *Gate) *Conn {
+	return NewConnWithTransport(transport.NewBufferedConnWithOptions(nc, g.connOptions), g)
+}
+
+func NewWSConn(ws *websocket.Conn, g *Gate, useJSON bool) *Conn {
+	return NewConnWithTransport(transport.NewWSConn(ws, useJSON), g)
+}
+
+func NewConnWithTransport(conn transport.Conn, g *Gate) *Conn {
 	c := &Conn{
-		gate:    g,
-		rawConn: nc,
-		bc:      transport.NewBufferedConnWithOptions(nc, g.connOptions),
+		gate: g,
+		conn: conn,
 
 		sendCh: make(chan *internalpb.Envelope, 8*1024),
 		closed: make(chan struct{}),
@@ -64,7 +71,7 @@ func (c *Conn) writeLoop() {
 	for {
 		select {
 		case env := <-c.sendCh:
-			if err := c.bc.WriteEnvelope(env); err != nil {
+			if err := c.conn.WriteEnvelope(env); err != nil {
 				return
 			}
 
@@ -99,7 +106,7 @@ var ErrConnBusy = errors.New("connection send buffer full")
 // =======================
 func (c *Conn) ReadLoop() {
 	for {
-		env, err := c.bc.ReadEnvelope()
+		env, err := c.conn.ReadEnvelope()
 		if err != nil {
 			c.gate.onConnClose(c)
 			return
@@ -115,7 +122,7 @@ func (c *Conn) ReadLoop() {
 func (c *Conn) Close() {
 	c.once.Do(func() {
 		close(c.closed)
-		_ = c.rawConn.Close()
+		_ = c.conn.Close()
 	})
 }
 

@@ -18,6 +18,11 @@ type RedisConfig struct {
 
 type GateConfig struct {
 	ListenAddr           string `json:"listen_addr"`
+	WebSocketListenAddr  string `json:"websocket_listen_addr"`
+	WebSocketPath        string `json:"websocket_path"`
+	EnableTCP            bool   `json:"enable_tcp"`
+	EnableWebSocket      bool   `json:"enable_websocket"`
+	WebSocketUseJSON     bool   `json:"websocket_use_json"`
 	ServiceAddr          string `json:"service_addr"`
 	GameAddr             string `json:"game_addr"`
 	ServicePoolSize      int    `json:"service_pool_size"`
