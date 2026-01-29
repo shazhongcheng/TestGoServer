@@ -9,8 +9,8 @@
     "password": "",
     "db": 0,
     "uid_key": "player:uid",
-    "pool_size": 500,
-    "minIdle_conns": 20,
+    "pool_size": 50,
+    "minIdle_conns": 5,
     "health_check_sec": 10
   }
 }

@@ -3,9 +3,9 @@ package redis_tools
 import (
 	"context"
 	"github.com/redis/go-redis/v9"
-	"time"
-
 	"go.uber.org/zap"
+	"sync"
+	"time"
 )
 
 type RedisConfig struct {
@@ -16,9 +16,13 @@ type RedisConfig struct {
 	MinIdleConns int
 }
 
-var redisClient *redis.Client
-var redisCfg RedisConfig
+var (
+	mu          sync.RWMutex
+	redisClient *redis.Client
+	redisCfg    RedisConfig
+)
 
+// InitRedis：只做一次初始化
 func InitRedis(cfg RedisConfig) error {
 	if cfg.PoolSize <= 0 {
 		cfg.PoolSize = 200
@@ -26,9 +30,8 @@ func InitRedis(cfg RedisConfig) error {
 	if cfg.MinIdleConns <= 0 {
 		cfg.MinIdleConns = 20
 	}
-	redisCfg = cfg
 
-	redisClient = redis.NewClient(&redis.Options{
+	client := redis.NewClient(&redis.Options{
 		Addr:         cfg.Addr,
 		Password:     cfg.Password,
 		DB:           cfg.DB,
@@ -39,18 +42,37 @@ func InitRedis(cfg RedisConfig) error {
 		WriteTimeout: 3 * time.Second,
 	})
 
-	// 启动期健康检查
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
-	return redisClient.Ping(ctx).Err()
+	if err := client.Ping(ctx).Err(); err != nil {
+		_ = client.Close()
+		return err
+	}
+
+	mu.Lock()
+	redisCfg = cfg
+	redisClient = client
+	mu.Unlock()
+
+	return nil
 }
 
+// RDB：统一出口（永不返回 nil）
 func RDB() *redis.Client {
-	return redisClient
+	mu.RLock()
+	c := redisClient
+	mu.RUnlock()
+	return c
 }
 
-func StartHealthCheck(ctx context.Context, logger *zap.Logger, interval time.Duration) {
+// StartHealthCheck
+// ⚠️ 只做“状态探测”，绝不 Close / 重建 client
+func StartHealthCheck(
+	ctx context.Context,
+	logger *zap.Logger,
+	interval time.Duration,
+) {
 	if logger == nil {
 		logger = zap.NewNop()
 	}
@@ -59,36 +81,32 @@ func StartHealthCheck(ctx context.Context, logger *zap.Logger, interval time.Dur
 	}
 
 	ticker := time.NewTicker(interval)
+
 	go func() {
 		defer ticker.Stop()
+
 		for {
 			select {
 			case <-ctx.Done():
 				return
+
 			case <-ticker.C:
-				if redisClient == nil {
+				client := RDB()
+				if client == nil {
+					logger.Warn("redis client not initialized")
 					continue
 				}
+
 				checkCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
-				err := redisClient.Ping(checkCtx).Err()
+				err := client.Ping(checkCtx).Err()
 				cancel()
-				if err == nil {
-					continue
+
+				if err != nil {
+					logger.Warn("redis ping failed",
+						zap.String("addr", redisCfg.Addr),
+						zap.String("reason", err.Error()),
+					)
 				}
-				logger.Warn("redis ping failed",
-					zap.String("reason", err.Error()),
-				)
-				_ = redisClient.Close()
-				redisClient = redis.NewClient(&redis.Options{
-					Addr:         redisCfg.Addr,
-					Password:     redisCfg.Password,
-					DB:           redisCfg.DB,
-					PoolSize:     redisCfg.PoolSize,
-					MinIdleConns: redisCfg.MinIdleConns,
-					DialTimeout:  3 * time.Second,
-					ReadTimeout:  3 * time.Second,
-					WriteTimeout: 3 * time.Second,
-				})
 			}
 		}
 	}()
