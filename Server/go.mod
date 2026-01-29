@@ -3,6 +3,7 @@ module game-server
 go 1.24.0
 
 require (
+	github.com/gorilla/websocket v1.5.1
 	github.com/redis/go-redis/v9 v9.17.3
 	go.uber.org/zap v0.0.0
 	google.golang.org/protobuf v1.36.11
