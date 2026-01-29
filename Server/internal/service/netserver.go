@@ -154,6 +154,7 @@ func (n *NetServer) routeToGame(env *internalpb.Envelope) error {
 		return protocol.InternalErrRemoteNotReady
 	}
 	router := n.gameRouter
+	msgID := int(env.MsgId)
 	if env.PlayerId != 0 {
 		n.routeMu.RLock()
 		r, ok := n.playerRoute[env.PlayerId]
@@ -166,5 +167,11 @@ func (n *NetServer) routeToGame(env *internalpb.Envelope) error {
 			n.routeMu.Unlock()
 		}
 	}
-	return router.Send(env)
+	err := router.Send(env)
+	if env.PlayerId != 0 && msgID == protocol.MsgPlayerOfflineNotify {
+		n.routeMu.Lock()
+		delete(n.playerRoute, env.PlayerId)
+		n.routeMu.Unlock()
+	}
+	return err
 }

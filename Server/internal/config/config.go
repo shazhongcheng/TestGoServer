@@ -23,18 +23,21 @@ type GateConfig struct {
 	HeartbeatIntervalSec int    `json:"heartbeat_interval_sec"`
 	HeartbeatTimeoutSec  int    `json:"heartbeat_timeout_sec"`
 	GCIntervalSec        int    `json:"gc_interval_sec"`
+	MaxEnvelopeSize      uint32 `json:"max_envelope_size"`
 }
 
 type ServiceConfig struct {
-	ListenAddr string      `json:"listen_addr"`
-	GameAddr   string      `json:"game_addr"`
-	Redis      RedisConfig `json:"redis"`
+	ListenAddr      string      `json:"listen_addr"`
+	GameAddr        string      `json:"game_addr"`
+	MaxEnvelopeSize uint32      `json:"max_envelope_size"`
+	Redis           RedisConfig `json:"redis"`
 }
 
 type GameConfig struct {
-	ListenAddr string      `json:"listen_addr"`
-	ServerID   string      `json:"server_id"`
-	Redis      RedisConfig `json:"redis"`
+	ListenAddr      string      `json:"listen_addr"`
+	ServerID        string      `json:"server_id"`
+	MaxEnvelopeSize uint32      `json:"max_envelope_size"`
+	Redis           RedisConfig `json:"redis"`
 }
 
 func Load(path string, out any) error {

@@ -30,11 +30,16 @@ func (m *PlayerManager) GetOrCreate(ctx context.Context, sessionID, playerID int
 		return p, nil
 	}
 
-	profile, _, _ := m.store.LoadProfile(ctx, playerID)
+	profile, _, err := m.store.LoadProfile(ctx, playerID)
+	if err != nil {
+		return nil, err
+	}
 	if profile == nil {
 		tmp := player_db.NewProfile(playerID, "")
 		profile = &tmp
-		_ = m.store.SaveProfile(ctx, profile)
+		if err := m.store.SaveProfile(ctx, profile); err != nil {
+			return nil, err
+		}
 	}
 
 	p = NewPlayer(playerID, sessionID, *profile, CreateModules())

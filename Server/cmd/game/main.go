@@ -13,6 +13,7 @@ import (
 	"game-server/internal/config"
 	"game-server/internal/game"
 	"game-server/internal/player_db"
+	"game-server/internal/transport"
 	"go.uber.org/zap"
 )
 
@@ -40,6 +41,9 @@ func main() {
 			zap.String("trace_id", ""),
 		)
 		os.Exit(1)
+	}
+	if cfg.MaxEnvelopeSize > 0 {
+		transport.SetMaxEnvelopeSize(cfg.MaxEnvelopeSize)
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)

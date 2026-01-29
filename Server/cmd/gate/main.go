@@ -14,6 +14,7 @@ import (
 	"game-server/internal/common/logging"
 	"game-server/internal/config"
 	"game-server/internal/gate"
+	"game-server/internal/transport"
 	"go.uber.org/zap"
 )
 
@@ -41,6 +42,9 @@ func main() {
 			zap.String("trace_id", ""),
 		)
 		os.Exit(1)
+	}
+	if cfg.MaxEnvelopeSize > 0 {
+		transport.SetMaxEnvelopeSize(cfg.MaxEnvelopeSize)
 	}
 
 	// ========== 基础上下文 & 信号 ==========
