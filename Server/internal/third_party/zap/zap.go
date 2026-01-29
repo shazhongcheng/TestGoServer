@@ -96,3 +96,17 @@ func Err(key string, err error) Field {
 func Error(err error) Field {
 	return Field{Key: "Error", Value: err}
 }
+
+func Any(key string, val interface{}) Field {
+	return Field{
+		Key:   key,
+		Value: val,
+	}
+}
+
+func ByteString(key string, val []byte) Field {
+	return Field{
+		Key:   key,
+		Value: string(val),
+	}
+}

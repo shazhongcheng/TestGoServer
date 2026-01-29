@@ -197,7 +197,7 @@ async def run_pressure_client(
         await asyncio.sleep(interval)
 
     # 模拟在线停留
-    await asyncio.sleep(random.uniform(5, 10))
+    await asyncio.sleep(random.uniform(1, 2))
     await client.close()
     return latencies
 

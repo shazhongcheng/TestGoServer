@@ -1,7 +1,11 @@
 // internal/service/dispatcher.go
 package service
 
-import "go.uber.org/zap"
+import (
+	"fmt"
+	"go.uber.org/zap"
+	"runtime/debug"
+)
 
 type Dispatcher struct {
 	registry *Registry
@@ -20,6 +24,8 @@ func (d *Dispatcher) Dispatch(ctx *Context) {
 		if r := recover(); r != nil {
 			d.logger.Error("handler panic",
 				zap.Any("panic", r),
+				zap.String("panic_type", fmt.Sprintf("%T", r)),
+				zap.ByteString("stack", debug.Stack()),
 				zap.Int("msg_id", ctx.MsgID),
 				zap.Int64("session", ctx.SessionID),
 				zap.Int64("player", ctx.PlayerID),
