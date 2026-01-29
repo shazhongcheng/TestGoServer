@@ -106,6 +106,8 @@ func (g *Gate) handleResume(c *Conn, env *internalpb.Envelope) {
 	)
 	fields = append(fields, connFields(c)...)
 	g.logger.Info("player resume", fields...)
+
+	g.unknownMsgKickCount = 0
 }
 
 func (g *Gate) sendResumeRsp(c *Conn, ok bool, reason string) {

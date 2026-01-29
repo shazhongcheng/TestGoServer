@@ -15,8 +15,17 @@ import (
 	"go.uber.org/zap"
 )
 
+type ConnType uint8
+
+const (
+	ConnTCP ConnType = iota
+	ConnWS
+)
+
 type Conn struct {
 	gate *Gate
+
+	connType ConnType // ⭐ 关键
 
 	conn transport.Conn
 
@@ -31,17 +40,55 @@ type Conn struct {
 
 	connectedAt time.Time
 	busyCount   uint32
+
+	lastSeen atomic.Int64 // UnixNano
 }
 
 func NewConn(nc net.Conn, g *Gate) *Conn {
-	return NewConnWithTransport(transport.NewBufferedConnWithOptions(nc, g.connOptions), g)
+	c := NewConnWithTransport(transport.NewBufferedConnWithOptions(nc, g.connOptions), g)
+	c.connType = ConnTCP
+	return c
 }
 
 func NewWSConn(ws *websocket.Conn, g *Gate, useJSON bool) *Conn {
-	return NewConnWithTransport(transport.NewWSConn(ws, useJSON), g)
+	// ⭐ WS 读超时（传输层）
+	ws.SetReadLimit(64 * 1024)
+
+	ws.SetReadDeadline(time.Now().Add(60 * time.Second))
+
+	ws.SetPongHandler(func(string) error {
+		ws.SetReadDeadline(time.Now().Add(60 * time.Second))
+		return nil
+	})
+
+	// （可选）定期发 Ping
+	go func() {
+		ticker := time.NewTicker(30 * time.Second)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ticker.C:
+				if err := ws.WriteControl(
+					websocket.PingMessage,
+					nil,
+					time.Now().Add(5*time.Second),
+				); err != nil {
+					_ = ws.Close()
+					return
+				}
+			}
+		}
+	}()
+
+	c := NewConnWithTransport(transport.NewWSConn(ws, useJSON), g)
+	c.connType = ConnWS
+	return c
 }
 
 func NewConnWithTransport(conn transport.Conn, g *Gate) *Conn {
+	now := time.Now()
+
 	c := &Conn{
 		gate: g,
 		conn: conn,
@@ -53,8 +100,22 @@ func NewConnWithTransport(conn transport.Conn, g *Gate) *Conn {
 		connectedAt: time.Now(),
 	}
 
+	c.lastSeen.Store(now.UnixNano())
+
 	go c.writeLoop()
 	return c
+}
+
+func (c *Conn) markAlive(t time.Time) {
+	c.lastSeen.Store(t.UnixNano())
+}
+
+func (c *Conn) lastAlive() time.Time {
+	n := c.lastSeen.Load()
+	if n == 0 {
+		return c.connectedAt
+	}
+	return time.Unix(0, n)
 }
 
 func (c *Conn) SessonId() int64 {
@@ -112,6 +173,9 @@ func (c *Conn) ReadLoop() {
 			return
 		}
 
+		// ⭐ 任意数据到达即视为连接活跃
+		c.markAlive(time.Now())
+
 		c.gate.OnEnvelope(c, env)
 	}
 }
@@ -159,12 +223,14 @@ func (g *Gate) onResume(c *Conn, req *ResumeReq) error {
 		return protocol.InternalErrInvalidToken
 	}
 
-	// 重新绑定
+	now := time.Now()
+
 	s.Conn = c
 	s.State = SessionOnline
-	s.LastSeen = time.Now()
-	c.sessionID = s.ID
+	s.LastSeen = now
 
+	c.sessionID = s.ID
+	c.markAlive(now)
 	return nil
 }
 

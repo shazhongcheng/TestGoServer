@@ -82,6 +82,7 @@ func (p *remoteClientPool) Send(sessionID int64, env *internalpb.Envelope) error
 func (c *remoteClient) Start(ctx context.Context) {
 	go c.connectLoop(ctx)
 	go c.writeLoop(ctx)
+	go c.heartbeatLoop(ctx)
 }
 
 func (c *remoteClient) Send(env *internalpb.Envelope) error {
@@ -216,5 +217,29 @@ func (c *remoteClient) connectLoop(ctx context.Context) {
 			zap.Int64("conn_id", 0),
 			zap.String("trace_id", ""),
 		)
+	}
+}
+
+func (c *remoteClient) heartbeatLoop(ctx context.Context) {
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			c.mu.RLock()
+			conn := c.conn
+			c.mu.RUnlock()
+
+			if conn == nil {
+				continue
+			}
+
+			_ = conn.WriteEnvelope(&internalpb.Envelope{
+				MsgId: protocol.MsgServicePing,
+			})
+		}
 	}
 }

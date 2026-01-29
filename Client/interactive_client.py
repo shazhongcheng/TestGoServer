@@ -8,9 +8,14 @@ from client_base import GameClient
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--host", default="127.0.0.1")
-    parser.add_argument("--port", type=int, default=9000)
-    parser.add_argument("--mode", choices=["tcp", "ws"], default="tcp")
+    # parser.add_argument("--port", type=int, default=9000)
+    # parser.add_argument("--mode", choices=["tcp", "ws"], default="tcp")
+    # parser.add_argument("--ws-path", default="/ws")
+
+    parser.add_argument("--port", type=int, default=9001)
+    parser.add_argument("--mode", choices=["tcp", "ws"], default="ws")
     parser.add_argument("--ws-path", default="/ws")
+
     parser.add_argument("--ws-use-json", action="store_true")
     args = parser.parse_args()
 

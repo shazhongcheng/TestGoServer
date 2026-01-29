@@ -16,6 +16,12 @@ const (
 
 	MsgErrorRsp = 21
 
+	MsgServicePing = 31
+	MsgServicePong = 32
+
+	MsgGamePing = 33
+	MsgGamePong = 34
+
 	MsgGateEnd = 1000
 )
 

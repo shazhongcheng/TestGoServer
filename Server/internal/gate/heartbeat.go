@@ -11,8 +11,16 @@ import (
 
 func (g *Gate) onHeartbeat(sessionID int64) {
 	s := g.sessions.Get(sessionID)
-	if s != nil {
-		s.LastSeen = time.Now()
+	if s == nil {
+		return
+	}
+
+	now := time.Now()
+	s.LastSeen = now
+
+	// ⭐ 同时刷新 Conn 的活跃时间
+	if s.Conn != nil {
+		s.Conn.markAlive(now)
 	}
 
 	_ = g.Reply(sessionID, protocol.MsgHeartbeatRsp, nil)
@@ -54,19 +62,35 @@ func (g *Gate) checkHeartbeat() {
 
 	now := time.Now()
 	for _, s := range g.sessions.snapshot() {
-		if s.State != SessionOnline {
+		if s.State != SessionOnline || s.Conn == nil {
 			continue
 		}
-		if now.Sub(s.LastSeen) > g.heartbeatTimeout {
-			fields := append(sessionFields(s),
-				zap.Int("msg_id", protocol.MsgHeartbeatReq),
-				zap.String("reason", "heartbeat_timeout"),
-			)
-			fields = append(fields, connFields(s.Conn)...)
-			g.logger.Warn("heartbeat timeout", fields...)
-			atomic.AddUint64(&g.heartbeatTimeoutCount, 1)
-			g.onSessionOffline(s, "heartbeat timeout")
+
+		// ⭐ 从 Conn 读取真实活跃时间
+		last := s.Conn.lastAlive()
+		timeout := g.heartbeatTimeout
+
+		// ⭐ WS 给更宽容的窗口
+		if s.Conn.connType == ConnWS {
+			timeout += timeout / 2
 		}
+
+		if now.Sub(last) <= timeout {
+			continue
+		}
+
+		fields := append(
+			sessionFields(s),
+			zap.Int("msg_id", protocol.MsgHeartbeatReq),
+			zap.String("reason", "heartbeat_timeout"),
+			zap.Duration("idle", now.Sub(last)),
+		)
+		fields = append(fields, connFields(s.Conn)...)
+
+		g.logger.Warn("heartbeat timeout", fields...)
+		atomic.AddUint64(&g.heartbeatTimeoutCount, 1)
+
+		g.onSessionOffline(s, "heartbeat timeout")
 	}
 }
 

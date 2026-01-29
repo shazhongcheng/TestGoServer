@@ -12,6 +12,11 @@ func (g *Gate) OnServiceEnvelope(env *internalpb.Envelope) {
 	msgID := int(env.MsgId)
 	sessionID := env.SessionId
 
+	if env.MsgId == protocol.MsgServicePong {
+		// 什么都不用做
+		return
+	}
+
 	switch msgID {
 	case protocol.MsgLoginRsp:
 		g.onLoginRsp(sessionID, env.Payload)
@@ -53,4 +58,6 @@ func (g *Gate) onLoginRsp(sessionID int64, payload []byte) {
 	)
 	fields = append(fields, connFields(s.Conn)...)
 	g.logger.Info("session authenticated", fields...)
+
+	g.unknownMsgKickCount = 0
 }

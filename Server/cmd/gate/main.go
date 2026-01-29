@@ -56,6 +56,9 @@ func main() {
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 
+	// ⭐ MOD 1️⃣：启动错误通道（用于 WS / TCP 启动失败）
+	errCh := make(chan error, 1)
+
 	// ========== Gate ==========
 	g := gate.NewGate(logger)
 	connOptions := transport.ConnOptions{
@@ -82,6 +85,7 @@ func main() {
 		enableTCP = true
 	}
 
+	// ========== TCP Listener ==========
 	var tcpListener net.Listener
 	if enableTCP {
 		addr := cfg.ListenAddr
@@ -133,6 +137,7 @@ func main() {
 		}()
 	}
 
+	// ========== WebSocket Listener ==========
 	var wsServer *http.Server
 	if enableWS {
 		wsAddr := cfg.WebSocketListenAddr
@@ -172,10 +177,12 @@ func main() {
 			}
 			go handleWSConn(g, wsConn, cfg.WebSocketUseJSON)
 		})
+
 		wsServer = &http.Server{
 			Addr:    wsAddr,
 			Handler: mux,
 		}
+
 		go func() {
 			if err := wsServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 				logger.Error("websocket listen failed",
@@ -186,9 +193,11 @@ func main() {
 					zap.Int64("conn_id", 0),
 					zap.String("trace_id", ""),
 				)
-				cancel()
+				// ⭐ MOD 2️⃣：启动失败直接通知主 goroutine
+				errCh <- err
 			}
 		}()
+
 		logger.Info("gate listening (websocket)",
 			zap.Int("msg_id", 0),
 			zap.Int64("session", 0),
@@ -202,7 +211,6 @@ func main() {
 	}
 
 	// ========== 等待退出 ==========
-	<-sigCh
 	logger.Info("gate shutting down",
 		zap.Int("msg_id", 0),
 		zap.Int64("session", 0),
@@ -211,8 +219,19 @@ func main() {
 		zap.Int64("conn_id", 0),
 		zap.String("trace_id", ""),
 	)
+	// ⭐ MOD 3️⃣：同时监听 OS Signal 和 启动失败
+	select {
+	case <-sigCh:
+		logger.Info("gate shutting down by signal")
+	case err := <-errCh:
+		logger.Error("gate startup failed, exiting",
+			zap.String("reason", err.Error()),
+		)
+	}
 
+	// ========== Shutdown ==========
 	cancel()
+
 	if tcpListener != nil {
 		_ = tcpListener.Close()
 	}
@@ -230,6 +249,8 @@ func main() {
 		zap.String("trace_id", ""),
 	)
 }
+
+// ================= handlers =================
 
 func handleConn(g *gate.Gate, netConn net.Conn) {
 	c := gate.NewConn(netConn, g)

@@ -108,7 +108,7 @@ func (g *Gate) OnEnvelope(c *Conn, env *internalpb.Envelope) {
 
 		case SessionAuthenticated:
 			// 重复登录策略（下面第四部分讲）
-			g.handleDuplicateLogin(s)
+			g.handleDuplicateLogin(s, c)
 			return
 
 		case SessionOnline:
@@ -227,7 +227,15 @@ func (g *Gate) onHeartbeatHandler(s *Session, _ *Conn, _ *internalpb.Envelope) {
 	g.onHeartbeat(s.ID)
 }
 
-func (g *Gate) handleDuplicateLogin(s *Session) {
+func (g *Gate) handleDuplicateLogin(s *Session, newConn *Conn) {
+	// ✅ 同一个连接的重复 Login，直接忽略
+	if s.Conn == newConn {
+		g.logger.Info("duplicate login from same conn, ignore",
+			zap.Int64("session", s.ID),
+			zap.String("trace_id", newConn.traceID),
+		)
+		return
+	}
 	fields := append(sessionFields(s), zap.String("reason", "duplicate_login"), zap.Int("msg_id", protocol.MsgLoginReq))
 	fields = append(fields, connFields(s.Conn)...)
 	g.logger.Warn("duplicate login kick old session", fields...)

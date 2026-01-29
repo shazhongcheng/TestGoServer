@@ -3,6 +3,7 @@ package service
 
 import (
 	"fmt"
+	"game-server/internal/protocol"
 	"go.uber.org/zap"
 	"runtime/debug"
 )
@@ -20,6 +21,11 @@ func NewDispatcher(reg *Registry, logger *zap.Logger) *Dispatcher {
 }
 
 func (d *Dispatcher) Dispatch(ctx *Context) {
+	if ctx.MsgID == protocol.MsgServicePing {
+		_ = ctx.Reply(protocol.MsgServicePong, nil)
+		return
+	}
+
 	defer func() {
 		if r := recover(); r != nil {
 			d.logger.Error("handler panic",
