@@ -30,7 +30,7 @@ func (d *Dispatcher) Dispatch(ctx *Context) {
 				zap.Int64("session", ctx.SessionID),
 				zap.Int64("player", ctx.PlayerID),
 				zap.Int64("conn_id", 0),
-				zap.String("trace_id", ""),
+				zap.String("trace_id", ctx.TraceID),
 			)
 		}
 	}()
@@ -43,7 +43,7 @@ func (d *Dispatcher) Dispatch(ctx *Context) {
 			zap.Int64("player", ctx.PlayerID),
 			zap.String("reason", "handler_not_found"),
 			zap.Int64("conn_id", 0),
-			zap.String("trace_id", ""),
+			zap.String("trace_id", ctx.TraceID),
 		)
 		return
 	}
@@ -55,7 +55,7 @@ func (d *Dispatcher) Dispatch(ctx *Context) {
 			zap.Int64("player", ctx.PlayerID),
 			zap.String("reason", err.Error()),
 			zap.Int64("conn_id", 0),
-			zap.String("trace_id", ""),
+			zap.String("trace_id", ctx.TraceID),
 		)
 	}
 }

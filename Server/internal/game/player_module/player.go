@@ -14,11 +14,18 @@ import (
 
 var ErrPlayerClosed = errors.New("player closed")
 var ErrPlayerBusy = errors.New("player inbox busy")
+var ErrUnknownMessage = errors.New("unknown player message")
 
 type Message struct {
 	MsgID int
 	Env   *internalpb.Envelope
-	Reply chan *internalpb.Envelope
+	Reply chan dispatchResult
+}
+
+type dispatchResult struct {
+	Envelope *internalpb.Envelope
+	Handled  bool
+	Err      error
 }
 
 type Player struct {
@@ -64,13 +71,15 @@ func (p *Player) loop() {
 	for msg := range p.inbox {
 		var rsp *internalpb.Envelope
 		replied := false
+		handled := false
+		var lastErr error
 
 		func() {
 			defer func() {
 				if r := recover(); r != nil {
 					// TODO: logger hook
 					if msg.Reply != nil && !replied {
-						msg.Reply <- nil
+						msg.Reply <- dispatchResult{Envelope: nil, Handled: handled, Err: lastErr}
 						replied = true
 					}
 				}
@@ -81,7 +90,6 @@ func (p *Player) loop() {
 					continue
 				}
 
-				var handled bool
 				var err error
 				func() {
 					defer func() {
@@ -94,6 +102,7 @@ func (p *Player) loop() {
 				}()
 				if err != nil {
 					// TODO: logger hook
+					lastErr = err
 				}
 				if handled {
 					break
@@ -102,7 +111,7 @@ func (p *Player) loop() {
 		}()
 
 		if msg.Reply != nil && !replied {
-			msg.Reply <- rsp
+			msg.Reply <- dispatchResult{Envelope: rsp, Handled: handled, Err: lastErr}
 		}
 	}
 }
@@ -116,27 +125,30 @@ func (p *Player) Dispatch(
 		return nil, ErrPlayerClosed
 	}
 
-	reply := make(chan *internalpb.Envelope, 1)
+	reply := make(chan dispatchResult, 1)
 
-	select {
-	case p.inbox <- Message{
+	if err := p.Post(Message{
 		MsgID: msgID,
 		Env:   env,
 		Reply: reply,
-	}:
+	}); err == nil {
 		timer := time.NewTimer(5 * time.Second)
 		defer timer.Stop()
 
 		select {
-		case rsp := <-reply:
-			return rsp, nil
+		case res := <-reply:
+			if res.Err != nil {
+				return nil, res.Err
+			}
+			if !res.Handled {
+				return nil, ErrUnknownMessage
+			}
+			return res.Envelope, nil
 		case <-timer.C:
 			return nil, errors.New("player reply timeout")
 		}
-	default:
-		// inbox full = backpressure
-		return nil, ErrPlayerBusy
 	}
+	return nil, ErrPlayerBusy
 }
 
 func (p *Player) Notify(msgID int, env *internalpb.Envelope) error {
@@ -144,12 +156,20 @@ func (p *Player) Notify(msgID int, env *internalpb.Envelope) error {
 		return ErrPlayerClosed
 	}
 
-	select {
-	case p.inbox <- Message{
+	return p.Post(Message{
 		MsgID: msgID,
 		Env:   env,
 		Reply: nil, // 关键：没有 reply
-	}:
+	})
+}
+
+func (p *Player) Post(msg Message) error {
+	if atomic.LoadInt32(&p.closed) == 1 {
+		return ErrPlayerClosed
+	}
+
+	select {
+	case p.inbox <- msg:
 		return nil
 	default:
 		return ErrPlayerBusy

@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"sync"
 
@@ -9,6 +10,7 @@ import (
 	"game-server/internal/protocol/internalpb"
 	"game-server/internal/router"
 	"game-server/internal/transport"
+	"go.uber.org/zap"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -16,18 +18,20 @@ type NetServer struct {
 	svc        *Server
 	gameRouter *GameRouter
 
-	mu       sync.RWMutex
-	gateConn *transport.BufferedConn
+	mu          sync.RWMutex
+	gateConn    *transport.BufferedConn
+	connOptions transport.ConnOptions
 
 	routeMu     sync.RWMutex
 	playerRoute map[int64]*GameRouter
 }
 
-func NewNetServer(svc *Server, gameRouter *GameRouter) *NetServer {
+func NewNetServer(svc *Server, gameRouter *GameRouter, connOptions transport.ConnOptions) *NetServer {
 	return &NetServer{
 		svc:         svc,
 		gameRouter:  gameRouter,
 		playerRoute: make(map[int64]*GameRouter),
+		connOptions: connOptions,
 	}
 }
 
@@ -54,7 +58,16 @@ func (n *NetServer) ListenAndServe(ctx context.Context, addr string) error {
 			}
 		}
 		n.mu.Lock()
-		n.gateConn = transport.NewBufferedConn(conn)
+		if n.gateConn != nil {
+			n.mu.Unlock()
+			n.svc.logger.Warn("reject gate connection",
+				zap.String("reason", "single_gate_only"),
+				zap.String("addr", conn.RemoteAddr().String()),
+			)
+			_ = conn.Close()
+			continue
+		}
+		n.gateConn = transport.NewBufferedConnWithOptions(conn, n.connOptions)
 		n.mu.Unlock()
 		go n.handleGateConn(ctx)
 	}
@@ -71,6 +84,14 @@ func (n *NetServer) handleGateConn(ctx context.Context) {
 	for {
 		env, err := conn.ReadEnvelope()
 		if err != nil {
+			n.svc.logger.Warn("gate connection closed",
+				zap.String("reason", err.Error()),
+			)
+			n.mu.Lock()
+			if n.gateConn == conn {
+				n.gateConn = nil
+			}
+			n.mu.Unlock()
 			return
 		}
 		n.dispatchEnvelope(ctx, env)
@@ -90,6 +111,7 @@ func (n *NetServer) dispatchEnvelope(ctx context.Context, env *internalpb.Envelo
 		PlayerID:  env.PlayerId,
 		MsgID:     msgID,
 		Payload:   env.Payload,
+		TraceID:   fmt.Sprintf("session-%d", env.SessionId),
 		Reply: func(replyMsgID int, data []byte) error {
 			return n.replyToGate(env.SessionId, replyMsgID, data)
 		},

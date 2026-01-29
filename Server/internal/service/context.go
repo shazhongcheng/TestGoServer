@@ -13,6 +13,7 @@ type Context struct {
 	PlayerID  int64
 	MsgID     int
 	Payload   []byte
+	TraceID   string
 
 	// 回包 / 推送
 	Reply      func(msgID int, data []byte) error

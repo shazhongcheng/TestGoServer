@@ -5,5 +5,12 @@
   "service_pool_size": 4,
   "heartbeat_interval_sec": 10,
   "heartbeat_timeout_sec": 30,
-  "gc_interval_sec": 60
+  "gc_interval_sec": 60,
+  "login_timeout_sec": 100,
+  "login_rate_limit_count": 5,
+  "login_rate_limit_window_sec": 10,
+  "unknown_msg_kick_count": 3,
+  "conn_read_timeout_sec": 120,
+  "conn_write_timeout_sec": 120,
+  "conn_keepalive_sec": 30
 }

@@ -10,6 +10,7 @@ import (
 	"game-server/internal/handler"
 	"game-server/internal/protocol"
 	"game-server/internal/protocol/internalpb"
+	"game-server/internal/transport"
 	"go.uber.org/zap"
 	"google.golang.org/protobuf/proto"
 )
@@ -24,18 +25,29 @@ type Gate struct {
 
 	servicePool *remoteClientPool
 
+	connOptions transport.ConnOptions
+
 	heartbeatInterval time.Duration
 	heartbeatTimeout  time.Duration
 	gcInterval        time.Duration
 
 	nextID int64
 
-	loginTimeout time.Duration
+	loginTimeout         time.Duration
+	loginRateLimitCount  int
+	loginRateLimitWindow time.Duration
+	unknownMsgKickCount  int
 
 	id        string // 比如 "gate1"
 	nextTrace uint64
 
 	handlers *handler.Registry[HandlerFunc]
+
+	heartbeatTimeoutCount uint64
+	loginTimeoutCount     uint64
+	loginRateLimitCounted uint64
+	unknownMsgCount       uint64
+	connBusyCount         uint64
 }
 
 func (g *Gate) newTraceID() string {
@@ -53,13 +65,16 @@ func NewGate(logger *zap.Logger) *Gate {
 		logger = zap.NewNop()
 	}
 	g := &Gate{
-		logger:            logger,
-		sessions:          NewSessionManager(),
-		heartbeatInterval: 100 * time.Second,
-		heartbeatTimeout:  300 * time.Second,
-		gcInterval:        10 * time.Minute,
-		loginTimeout:      100 * time.Second,
-		handlers:          handler.NewRegistry[HandlerFunc](),
+		logger:               logger,
+		sessions:             NewSessionManager(),
+		heartbeatInterval:    100 * time.Second,
+		heartbeatTimeout:     300 * time.Second,
+		gcInterval:           10 * time.Minute,
+		loginTimeout:         100 * time.Second,
+		loginRateLimitCount:  5,
+		loginRateLimitWindow: 10 * time.Second,
+		unknownMsgKickCount:  3,
+		handlers:             handler.NewRegistry[HandlerFunc](),
 	}
 	if err := g.registerHandlers(); err != nil {
 		g.logger.Warn("register gate handlers failed", zap.String("reason", err.Error()))
@@ -70,6 +85,7 @@ func NewGate(logger *zap.Logger) *Gate {
 func (g *Gate) Start(ctx context.Context) {
 	go g.heartbeatLoop(ctx)
 	go g.gcLoop(ctx)
+	go g.reportStats(ctx, time.Minute)
 }
 
 func (g *Gate) nextSessionID() int64 {
@@ -130,11 +146,11 @@ func (g *Gate) Kick(sessionID int64, reason string) error {
 }
 
 func (g *Gate) ConnectService(ctx context.Context, addr string, poolSize int) {
-	g.servicePool = newRemoteClientPool("service", addr, g.logger, g.OnServiceEnvelope, poolSize)
+	g.servicePool = newRemoteClientPool("service", addr, g.logger, g.OnServiceEnvelope, poolSize, g.connOptions, 2, 5*time.Millisecond)
 	g.servicePool.Start(ctx)
 }
 
-func (g *Gate) UpdateConfig(interval, timeout, gc time.Duration) {
+func (g *Gate) UpdateConfig(interval, timeout, gc, loginTimeout time.Duration, loginLimitCount int, loginWindow time.Duration, unknownMsgKick int, connOptions transport.ConnOptions) {
 	if interval > 0 {
 		g.heartbeatInterval = interval
 	}
@@ -144,6 +160,19 @@ func (g *Gate) UpdateConfig(interval, timeout, gc time.Duration) {
 	if gc > 0 {
 		g.gcInterval = gc
 	}
+	if loginTimeout > 0 {
+		g.loginTimeout = loginTimeout
+	}
+	if loginLimitCount > 0 {
+		g.loginRateLimitCount = loginLimitCount
+	}
+	if loginWindow > 0 {
+		g.loginRateLimitWindow = loginWindow
+	}
+	if unknownMsgKick > 0 {
+		g.unknownMsgKickCount = unknownMsgKick
+	}
+	g.connOptions = connOptions
 }
 
 func (g *Gate) Logger() *zap.Logger {
